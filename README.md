@@ -1,137 +1,107 @@
 # readlist
 
-Keep a reading list in git. Fetch the open-access PDFs locally.
-
-```
-$ readlist fetch reading-list.yaml
-  [x] got    costan2016sgx   pdf link in list
-  [x] got    lee2020keystone arxiv 1907.10119
-  [x] got    xu2015controlled semantic scholar
-  [~] manual li2024sok       papers/01-map/01-li2024sok.url
-  [x] have   yu2023capstone  papers/05-angle/01-yu2023capstone.pdf
-
-5 papers: 0 failed, 1 need a manual fetch (see the .url files in papers).
-```
-
-A lab, a course or a group of co-authors commits one list file. Everyone runs
-`readlist fetch` and gets the same folder of PDFs on their own machine. The
-PDFs never enter the repository, because they are copyrighted.
-
-## Why not just Zotero?
-
-Use Zotero for your personal library. readlist is for a *shared, ordered* list:
-
-- **The list is a file you review like code.** Reading order, groups, "why
-  read this" notes and tags all show up as diffs.
-- **Annotation-safe.** A PDF you already have is never downloaded again.
-  Each download is checksummed. If `--force` would replace a file you have
-  highlighted, the annotated copy is moved to `annotated-backup/` first.
-- **Verified, not guessed.** An arXiv id is checked against the paper's title
-  before anything is saved, so a wrong id is reported, not silently
-  downloaded as the wrong paper.
-- **Honest about gaps.** A paper with no open copy gets a `.url` file that
-  opens its landing page with a double-click, so you fetch it by hand.
-
-## Install
+readlist turns a reading list in your repository into a local folder of PDFs.
+Your group commits the list; each person runs `readlist fetch` and gets the
+same papers, in the same order, on their own machine.
 
 ```
 uv tool install git+https://github.com/biecho/readlist
-# or: pipx install git+https://github.com/biecho/readlist
+readlist fetch reading-list.yaml
 ```
 
-Requires Python 3.11 or newer. The only dependency is PyYAML.
+```
+  [x] got    costan2016sgx    pdf link in list
+  [x] got    lee2020keystone  arxiv 1907.10119
+  [x] got    xu2015controlled semantic scholar
+  [~] manual li2024sok        papers/01-map/01-li2024sok.url
+  [x] have   yu2023capstone   papers/05-angle/01-yu2023capstone.pdf
+```
 
-## Lists
+readlist downloads only open copies. When it finds none, it writes a `.url`
+file that opens the paper's page, so you fetch that one by hand.
 
-### YAML
+## What it guarantees
+
+- **Your annotations survive.** readlist never re-downloads a PDF you have.
+  If `--force` would replace a file you highlighted, readlist first moves your
+  copy to `annotated-backup/`.
+- **You get the right paper.** readlist checks every arXiv id against the
+  paper's title and reports a mismatch instead of saving the wrong PDF.
+- **The PDFs stay out of the repository.** You share the list, which you can
+  review like code, and keep the copyrighted papers local.
+
+## Write a list
 
 ```yaml
-groups:                         # `stages:` also works
+groups:
   - id: 01-map
     title: Get the map
     papers:
       - id: costan2016sgx
         title: Intel SGX Explained
-        tags: [core]            # select with --tag core
+        tags: [core]
         pdf: https://css.csail.mit.edu/6.858/2019/readings/costan-sgx.pdf
       - id: lee2020keystone
-        title: "Keystone: An Open Framework for Architecting Trusted Execution Environments"
-        arxiv: "1907.10119"     # quote it: YAML turns 2010.08440 into 2010.0844
+        title: "Keystone: An Open Framework for Architecting TEEs"
+        arxiv: "1907.10119"     # quote it, or YAML turns 2010.08440 into 2010.0844
 ```
 
-Files land in `papers/<group>/<NN>-<id>.pdf`, where NN is the paper's
-position in its group. Other fields: `authors`, `year`, `venue`, `doi`,
-`landing`, `kind` (`talk` and `web` always get a link placeholder rather than a
-download), and `open_copy: false`, which means only an explicit `pdf` link
-counts. Any other keys, such as your own reading notes, are ignored, so keep
-them in the list. See [`examples/reading-list.yaml`](examples/reading-list.yaml).
+readlist saves each paper as `papers/<group>/<NN>-<id>.pdf`, where NN is its
+position in the group. Each paper needs an `id` and a `title`; add `pdf`,
+`arxiv` or `doi` to help readlist find it. Optional fields: `authors`, `year`,
+`venue`, `tags`, `landing` (the page a `.url` file opens), `kind: talk` or
+`kind: web` (link only, never downloaded), and `open_copy: false` (accept only
+the `pdf` link). readlist ignores any other keys, so keep your reading notes in
+the list. [`examples/reading-list.yaml`](examples/reading-list.yaml) shows a
+complete list.
 
-### BibTeX
+readlist also reads BibTeX and CSV:
 
 ```
 readlist fetch refs.bib                              # every entry
-readlist fetch refs.bib --bbl build/main.bbl         # cited entries, numbered as in the paper
+readlist fetch refs.bib --bbl build/main.bbl         # cited entries, numbered as in your paper
 readlist fetch refs.bib --groups reading-list.csv    # one folder per group
+readlist fetch papers.csv                            # columns: id, title, group, pdf, arxiv, doi, ...
 ```
 
-readlist uses `pdfurl` (a non-standard field that BibTeX styles ignore), `url`
-when it ends in `.pdf`, `eprint` (arXiv) and `doi`. `opencopy = {none}` marks
-an entry whose only open copy is a different version, such as a superseded
-preprint. An entry with only a non-PDF `url` is treated as a web resource.
+In BibTeX, readlist uses `pdfurl`, `url` (when it ends in `.pdf`), `eprint`
+and `doi`. Mark an entry `opencopy = {none}` when its only open copy is a
+different version, such as a superseded preprint.
 
-### CSV
+## How readlist finds a PDF
 
-One row per paper: `id`, `title`, plus any of `group`, `authors`, `year`,
-`venue`, `tags` (separated by `;`), `pdf`, `arxiv`, `doi`, `landing`, `kind`.
+readlist tries these sources in order and stops at the first hit:
 
-## Where PDFs come from
+1. the `pdf` link in your list
+2. the `arxiv` id, after the title check
+3. [Unpaywall](https://unpaywall.org), by DOI (needs your email; see below)
+4. [Semantic Scholar](https://www.semanticscholar.org), by DOI or title
+5. an arXiv search by title
 
-For each paper, readlist tries these in order and stops at the first hit:
-
-1. A `pdf` link written in the list. A link you found by hand always wins.
-2. The `arxiv` id, after checking it against the title.
-3. [Unpaywall](https://unpaywall.org) by DOI. This needs a contact email; see Configuration.
-4. [Semantic Scholar](https://www.semanticscholar.org), by DOI or by title.
-   Results are title-checked, and DOI links (publisher landing pages) are ignored.
-5. An arXiv search by title, as a last resort.
-
-Pass `--record` and any link found by steps 3–5 is written back into the list
-file. Only that one line changes; comments and formatting stay. Your
-collaborators then get the link without a lookup.
-
-readlist fetches open copies only. It does not scrape publishers, drive
-institutional proxies or use shadow libraries, and that will not change.
-Paywalled papers are one authenticated click away; that is what the `.url`
-files are for.
+Add `--record` and readlist writes each link it found through steps 3–5 back
+into your list, so your collaborators skip the lookup.
 
 ## Commands
 
 ```
-readlist fetch  LIST [--dry-run] [--force] [--record]
-readlist list   LIST                 # [x] have  [~] manual  [ ] not yet
-readlist check  LIST [--online]      # lint; --online verifies every arXiv id
+readlist fetch LIST [--dry-run] [--force] [--record]
+readlist list  LIST               # what you have, what still needs a manual fetch
+readlist check LIST [--online]    # lint the list; --online verifies arXiv ids
 ```
 
-Common options: `--group G`, `--tag T`, `--out DIR` (default: `papers/` next
-to the list), `--bbl FILE`, `--groups CSV`.
+Every command accepts `--group G`, `--tag T` and `--out DIR` (default: `papers/`
+next to the list).
 
-## Configuration
+## Configure
 
-`~/.config/readlist/config.toml`:
+Put your settings in `~/.config/readlist/config.toml`:
 
 ```toml
-email = "you@example.org"        # enables Unpaywall
-semantic_scholar_key = "..."     # optional private quota
+email = "you@example.org"        # turns on Unpaywall
+semantic_scholar_key = "..."     # optional: your own Semantic Scholar quota
 ```
 
-The environment variables `READLIST_EMAIL` and `S2_API_KEY` override the
-file. These settings stay with each user and never go into a shared list.
-
-## Being polite
-
-readlist identifies itself in its User-Agent and waits between requests to
-the same host: 3 seconds for arXiv, as arXiv asks, and 1 second elsewhere. It
-backs off when a server answers HTTP 429.
+`READLIST_EMAIL` and `S2_API_KEY` override the file.
 
 ## License
 
