@@ -1,0 +1,54 @@
+# A small example: getting into trusted execution environments (TEEs).
+#
+#   readlist fetch examples/reading-list.yaml
+#   readlist fetch examples/reading-list.yaml --tag core
+#
+# Extra keys like `read_for` are ignored by readlist; keep your notes here.
+
+groups:
+  - id: 01-foundations
+    title: Foundations
+    papers:
+      - id: costan2016sgx-explained
+        title: "Intel SGX Explained"
+        authors: [Victor Costan, Srinivas Devadas]
+        year: 2016
+        tags: [core]
+        pdf: https://css.csail.mit.edu/6.858/2019/readings/costan-sgx.pdf
+        landing: https://eprint.iacr.org/2016/086
+        read_for: The field's textbook. Use as a reference.
+
+      - id: xu2015controlled-channel
+        title: "Controlled-Channel Attacks: Deterministic Side Channels for Untrusted Operating Systems"
+        authors: [Yuanzhong Xu, Weidong Cui, Marcus Peinado]
+        year: 2015
+        venue: IEEE S&P
+        read_for: The malicious-OS threat model. No link given; readlist looks it up.
+
+  - id: 02-designs
+    title: Open designs
+    papers:
+      - id: lee2020keystone
+        title: "Keystone: An Open Framework for Architecting TEEs"
+        authors: [Dayeol Lee, David Kohlbrenner, Shweta Shinde, Krste Asanović, Dawn Song]
+        year: 2020
+        venue: EuroSys
+        tags: [core]
+        arxiv: "1907.10119"
+
+  - id: 03-frontier
+    title: Current attacks
+    papers:
+      - id: demeulemeester2025badram
+        title: "BadRAM: Practical Memory Aliasing Attacks on Trusted Execution Environments"
+        year: 2025
+        venue: IEEE S&P
+        tags: [core]
+        landing: https://badram.eu/
+
+      - id: systex2026-keynote
+        kind: talk
+        title: "Let's Get Physical: Low-Cost Memory Interposer Attacks and the Future of Confidential Computing"
+        authors: [Jo Van Bulck]
+        year: 2026
+        landing: https://systex-workshop.github.io/2026/program.html

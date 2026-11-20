@@ -1,0 +1,9 @@
+__pycache__/
+*.egg-info/
+.venv/
+dist/
+build/
+.pytest_cache/
+# PDFs are copyrighted: share the list, never the papers.
+papers/
+*.pdf
