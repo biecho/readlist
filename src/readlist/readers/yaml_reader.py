@@ -13,6 +13,9 @@ Either grouped:
 or flat, with a top-level `papers:` list. Papers are numbered by their
 position within their group; the number prefixes the filename. Unknown keys
 (reading notes, say) are ignored.
+
+An optional top-level `ranking:` lists paper ids from read-first to
+read-last, across groups; `readlist rank` shows it.
 """
 
 from __future__ import annotations
@@ -36,7 +39,24 @@ def read_yaml(path: Path) -> ReadingList:
     else:
         raise FormatError(f"{path}: needs a top-level 'groups' (or 'stages') or 'papers' list")
 
-    return ReadingList(source=path, papers=tuple(papers))
+    ranking = _ranking(data.get("ranking"), papers, path)
+    return ReadingList(source=path, papers=tuple(papers), ranking=ranking)
+
+
+def _ranking(entries, papers: list[Paper], path: Path) -> tuple[str, ...]:
+    """The top-level `ranking:`, a list of paper ids. Every id must exist, once."""
+    if entries is None:
+        return ()
+    ranking = tuple(str(entry) for entry in entries)
+    known = {p.id for p in papers}
+
+    unknown = [i for i in ranking if i not in known]
+    if unknown:
+        raise FormatError(f"{path}: ranking names unknown ids: {', '.join(unknown)}")
+    repeated = sorted({i for i in ranking if ranking.count(i) > 1})
+    if repeated:
+        raise FormatError(f"{path}: ranking repeats ids: {', '.join(repeated)}")
+    return ranking
 
 
 def _grouped(groups, path: Path) -> list[Paper]:
@@ -77,6 +97,7 @@ def _paper(entry: dict, group: str, number: int, path: Path) -> Paper:
         arxiv=_arxiv_id(entry.get("arxiv"), where),
         doi=str(entry.get("doi") or ""),
         landing=str(entry.get("landing") or ""),
+        why=" ".join(str(entry.get("why") or entry.get("read_for") or "").split()),
         open_copy=bool(entry.get("open_copy", True)),
     )
 

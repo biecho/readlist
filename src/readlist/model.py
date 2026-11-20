@@ -28,6 +28,7 @@ class Paper:
     arxiv: str = ""
     doi: str = ""
     landing: str = ""  # human-facing page, used for placeholders
+    why: str = ""  # why read it (`why` or `read_for` in YAML)
     open_copy: bool = True  # False: the only acceptable copy is an explicit `pdf`
 
     @property
@@ -49,6 +50,7 @@ class Paper:
 class ReadingList:
     source: Path
     papers: tuple[Paper, ...] = field(default_factory=tuple)
+    ranking: tuple[str, ...] = ()  # paper ids, read-first to read-last
 
     def select(self, *, group: str | None = None, tag: str | None = None) -> ReadingList:
         papers = self.papers
@@ -56,7 +58,20 @@ class ReadingList:
             papers = tuple(p for p in papers if p.group == group)
         if tag is not None:
             papers = tuple(p for p in papers if tag in p.tags)
-        return replace(self, papers=papers)
+        kept = {p.id for p in papers}
+        return replace(self, papers=papers, ranking=tuple(i for i in self.ranking if i in kept))
+
+    def ranked(self) -> tuple[list[Paper], list[Paper]]:
+        """(papers in ranking order, papers the ranking leaves out).
+
+        Without a ranking, the list order is the ranking.
+        """
+        if not self.ranking:
+            return list(self.papers), []
+        by_id = {p.id: p for p in self.papers}
+        ranked = [by_id[i] for i in self.ranking]
+        unranked = [p for p in self.papers if p.id not in set(self.ranking)]
+        return ranked, unranked
 
     def groups(self) -> list[str]:
         """Group names in order of first appearance."""

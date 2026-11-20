@@ -85,3 +85,34 @@ def test_csv_list_and_group_override(tmp_path):
 def test_unknown_format(tmp_path):
     with pytest.raises(FormatError, match="unsupported format"):
         readers.read(write(tmp_path, "list.txt", ""))
+
+
+RANKED = """
+ranking: [b, a]
+groups:
+  - id: g
+    papers:
+      - {id: a, title: A, read_for: "Second.", tags: [core]}
+      - {id: b, title: B, why: First.}
+      - {id: c, title: C}
+"""
+
+
+def test_ranking_orders_across_groups_and_reports_unranked(tmp_path):
+    reading_list = readers.read(write(tmp_path, "list.yaml", RANKED))
+    ranked, unranked = reading_list.ranked()
+    assert [p.id for p in ranked] == ["b", "a"] and [p.id for p in unranked] == ["c"]
+    assert ranked[0].why == "First." and ranked[1].why == "Second."
+    assert reading_list.select(tag="core").ranking == ("a",)
+
+
+def test_ranking_rejects_unknown_and_repeated_ids(tmp_path):
+    with pytest.raises(FormatError, match="unknown ids: z"):
+        readers.read(write(tmp_path, "l.yaml", RANKED.replace("[b, a]", "[b, z]")))
+    with pytest.raises(FormatError, match="repeats ids: a"):
+        readers.read(write(tmp_path, "l.yaml", RANKED.replace("[b, a]", "[a, a]")))
+
+
+def test_without_ranking_list_order_is_the_ranking(tmp_path):
+    reading_list = readers.read(write(tmp_path, "l.yaml", RANKED.replace("ranking: [b, a]\n", "")))
+    assert [p.id for p in reading_list.ranked()[0]] == ["a", "b", "c"]

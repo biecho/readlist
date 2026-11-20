@@ -4,6 +4,7 @@
     readlist fetch refs.bib --bbl build/main.bbl --out references/
     readlist fetch refs.bib --groups reading-list.csv
     readlist list reading-list.yaml             what you have, what is missing
+    readlist rank reading-list.yaml             the reading order, read-first on top
     readlist check reading-list.yaml --online   lint the list, verify arXiv ids
 """
 
@@ -34,6 +35,8 @@ def main(argv: list[str] | None = None, http: Fetcher | None = None) -> int:
         return _fetch(args, reading_list, http)
     elif args.command == "list":
         return _list(args, reading_list)
+    elif args.command == "rank":
+        return _rank(args, reading_list)
     elif args.command == "check":
         return _check(args, reading_list, http)
     else:
@@ -63,6 +66,25 @@ def _list(args, reading_list: ReadingList) -> int:
             status = library.status(paper)
             star = "*" if "core" in paper.tags else " "
             print(f"  [{MARKS[status]}]{star} {paper.stem}  {paper.title}")
+    print("\n[x] have  [~] manual fetch  [ ] not fetched yet   * core")
+    return 0
+
+
+def _rank(args, reading_list: ReadingList) -> int:
+    library = Library(_out_dir(args))
+    ranked, unranked = reading_list.ranked()
+    if not reading_list.ranking:
+        print("No `ranking:` in this list, so this is the list order.\n")
+
+    width = len(str(len(ranked)))
+    for position, paper in enumerate(ranked, start=1):
+        star = "*" if "core" in paper.tags else " "
+        print(f"{position:>{width}}. [{MARKS[library.status(paper)]}]{star} {paper.title}")
+        if paper.why:
+            print(f"{' ' * (width + 7)}{paper.why}")
+
+    if unranked:
+        print(f"\nNot ranked: {', '.join(p.id for p in unranked)}")
     print("\n[x] have  [~] manual fetch  [ ] not fetched yet   * core")
     return 0
 
@@ -103,6 +125,7 @@ def _parser() -> argparse.ArgumentParser:
     fetch.add_argument("--force", action="store_true", help="re-download (annotated copies are backed up)")
     fetch.add_argument("--record", action="store_true", help="write discovered links back into the list")
     commands_.add_parser("list", parents=[common], help="show what you have and what is missing")
+    commands_.add_parser("rank", parents=[common], help="show the reading order, read-first on top")
     check = commands_.add_parser("check", parents=[common], help="lint the list")
     check.add_argument("--online", action="store_true", help="also verify arXiv ids against titles")
     return parser

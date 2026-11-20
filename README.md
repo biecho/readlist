@@ -55,6 +55,30 @@ the `pdf` link). readlist ignores any other keys, so keep your reading notes in
 the list. [`examples/reading-list.yaml`](examples/reading-list.yaml) shows a
 complete list.
 
+### Rank what to read first
+
+Groups and positions say where a paper belongs; a top-level `ranking:` says
+when to read it. List paper ids from read-first to read-last, across groups:
+
+```yaml
+ranking:
+  - li2024sok
+  - lee2020keystone
+  - costan2016sgx
+```
+
+`readlist rank` prints that order with each paper's status and its `why` (or
+`read_for`) line. readlist rejects a ranking that names an unknown id or
+repeats one, and lists the papers it leaves out.
+
+```
+$ readlist rank reading-list.yaml --tag core
+ 1. [~]* SoK: Understanding Design Choices and Pitfalls of TEEs
+         Design space of TEEs, mapped to the attack class each choice invites.
+ 2. [x]* Keystone: An Open Framework for Architecting TEEs
+         Open RISC-V TEE; the academic prototyping base.
+```
+
 readlist also reads BibTeX and CSV:
 
 ```
@@ -86,6 +110,7 @@ into your list, so your collaborators skip the lookup.
 ```
 readlist fetch LIST [--dry-run] [--force] [--record]
 readlist list  LIST               # what you have, what still needs a manual fetch
+readlist rank  LIST               # the reading order, read-first on top
 readlist check LIST [--online]    # lint the list; --online verifies arXiv ids
 ```
 
