@@ -3,6 +3,7 @@
     readlist fetch reading-list.yaml            download open copies to ./papers/
     readlist fetch refs.bib --bbl build/main.bbl --out references/
     readlist fetch refs.bib --groups reading-list.csv
+    readlist fetch reading-list.yaml --browser  also get papers sites block (ACM, Cloudflare)
     readlist list reading-list.yaml             what you have, what is missing
     readlist rank reading-list.yaml             the reading order, read-first on top
     readlist open reading-list.yaml 4 7-9       open papers by their number in `rank`
@@ -13,10 +14,11 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import sys
 from pathlib import Path
 
-from readlist import __version__, commands, config, opener, readers, render
+from readlist import __version__, browser, commands, config, opener, readers, render
 from readlist.http import Fetcher, Http
 from readlist.library import Library
 from readlist.model import FormatError, ReadingList, SelectionError
@@ -51,12 +53,19 @@ def main(argv: list[str] | None = None, http: Fetcher | None = None) -> int:
 
 
 def _fetch(args, reading_list: ReadingList, http: Fetcher) -> int:
+    if args.browser and not browser.available():
+        print("readlist: --browser needs the browser-use CLI (pip install browser-use)",
+              file=sys.stderr)
+        return 2
+
     library = Library(_out_dir(args))
-    outcomes = commands.fetch(
-        reading_list, library, http, config.load(),
-        force=args.force, dry_run=args.dry_run, record=args.record,
-        report=lambda o: print(f"  [{MARKS[o.status]}] {o.status:<6} {o.paper.id}  {o.detail}"),
-    )
+    with contextlib.ExitStack() as stack:
+        window = stack.enter_context(browser.Browser()) if args.browser else None
+        outcomes = commands.fetch(
+            reading_list, library, http, config.load(),
+            force=args.force, dry_run=args.dry_run, record=args.record, browser=window,
+            report=lambda o: print(f"  [{MARKS[o.status]}] {o.status:<6} {o.paper.id}  {o.detail}"),
+        )
 
     failed = [o for o in outcomes if o.status == "failed"]
     manual = [o for o in outcomes if o.status == "manual"]
@@ -163,6 +172,8 @@ def _parser() -> argparse.ArgumentParser:
     fetch.add_argument("--dry-run", action="store_true", help="resolve links, download nothing")
     fetch.add_argument("--force", action="store_true", help="re-download (annotated copies are backed up)")
     fetch.add_argument("--record", action="store_true", help="write discovered links back into the list")
+    fetch.add_argument("--browser", action="store_true",
+                       help="retry papers that sites block in a visible browser (needs browser-use)")
     commands_.add_parser("list", parents=[common], help="show what you have and what is missing")
     commands_.add_parser("rank", parents=[common], help="show the reading order, read-first on top")
     open_ = commands_.add_parser("open", parents=[common], help="open papers in your PDF app")

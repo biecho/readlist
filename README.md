@@ -18,7 +18,8 @@ readlist fetch reading-list.yaml
 ```
 
 readlist downloads only open copies. When it finds none, it writes a `.url`
-file that opens the paper's page, so you fetch that one by hand.
+file that opens the paper's page, so you fetch that one by hand, or let
+`--browser` fetch it for you.
 
 ## What it guarantees
 
@@ -134,10 +135,26 @@ readlist tries these sources in order and stops at the first hit:
 Add `--record` and readlist writes each link it found through steps 3–5 back
 into your list, so your collaborators skip the lookup.
 
+### Papers a site blocks
+
+Some publishers, ACM among them, refuse scripts but serve the same open PDF to
+a person in a browser. Add `--browser` and readlist retries those papers in a
+visible browser window, one at a time:
+
+```
+pip install browser-use        # once; readlist drives its CLI
+readlist fetch reading-list.yaml --browser
+```
+
+readlist tries the blocked link it found, and for ACM DOIs the ACM Digital
+Library PDF. If the site shows a bot check that needs a click, click it in the
+window; readlist waits up to a minute. The window uses a fresh browser profile
+with none of your logins, so it gets only what the site gives any visitor.
+
 ## Commands
 
 ```
-readlist fetch LIST [--dry-run] [--force] [--record]
+readlist fetch LIST [--dry-run] [--force] [--record] [--browser]
 readlist list  LIST               # what you have, what still needs a manual fetch
 readlist rank  LIST               # the reading order, read-first on top
 readlist open  LIST [N|N-M|ID ...] [--app APP]   # open papers in your PDF app

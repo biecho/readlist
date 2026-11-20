@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 from readlist import resolvers, writeback
+from readlist.browser import Browser, BrowserError, candidate_urls
 from readlist.config import Config
 from readlist.http import Fetcher, HttpError
 from readlist.library import Library, NotAPdf
@@ -35,12 +36,14 @@ def fetch(
     force: bool = False,
     dry_run: bool = False,
     record: bool = False,
+    browser: Browser | None = None,
     report: Callable[[Outcome], None] = lambda outcome: None,
 ) -> list[Outcome]:
+    """Download each paper. With `browser`, retry blocked papers in a visible browser."""
     outcomes = []
     for paper in reading_list.papers:
         outcome = _fetch_one(paper, reading_list, library, http, config,
-                             force=force, dry_run=dry_run, record=record)
+                             force=force, dry_run=dry_run, record=record, browser=browser)
         report(outcome)
         outcomes.append(outcome)
     return outcomes
@@ -62,9 +65,11 @@ def check(reading_list: ReadingList, http: Fetcher | None = None) -> list[str]:
     return problems
 
 
-def _fetch_one(paper, reading_list, library, http, config, *, force, dry_run, record) -> Outcome:
+def _fetch_one(paper, reading_list, library, http, config, *,
+               force, dry_run, record, browser) -> Outcome:
     if library.has(paper) and not force:
         return Outcome(paper, "have", str(library.pdf_path(paper)))
+    earlier_link = library.placeholder_target(paper)  # a blocked link from an earlier run
 
     try:
         resolution = resolvers.resolve(paper, http, config)
@@ -74,7 +79,7 @@ def _fetch_one(paper, reading_list, library, http, config, *, force, dry_run, re
         return Outcome(paper, "failed", f"lookup: {problem}")
 
     if resolution is None:
-        return _manual(paper, library, dry_run)
+        return _no_open_copy(paper, library, browser, dry_run, earlier_link)
     elif dry_run:
         return Outcome(paper, "would", f"{resolution.source}: {resolution.url}")
 
@@ -82,9 +87,8 @@ def _fetch_one(paper, reading_list, library, http, config, *, force, dry_run, re
         body = http.get(resolution.url)
         backup = library.store(paper, body, resolution.url)
     except HttpError as problem:
-        if problem.status in BLOCKED_STATUSES and resolution.discovered and not dry_run:
-            placeholder = library.write_placeholder(paper, resolution.url)
-            return Outcome(paper, "manual", f"{placeholder} (host blocks scripts; open copy found)")
+        if problem.status in BLOCKED_STATUSES:
+            return _blocked(paper, library, browser, resolution, earlier_link, problem)
         return Outcome(paper, "failed", f"{resolution.url}: {problem}")
     except NotAPdf as problem:
         return Outcome(paper, "failed", f"{resolution.url}: {problem}")
@@ -97,11 +101,50 @@ def _fetch_one(paper, reading_list, library, http, config, *, force, dry_run, re
     return Outcome(paper, "got", "; ".join(notes))
 
 
-def _manual(paper: Paper, library: Library, dry_run: bool) -> Outcome:
+def _no_open_copy(paper, library, browser, dry_run, earlier_link) -> Outcome:
     if dry_run:
         return Outcome(paper, "manual", "no open copy found")
+
+    tried = ""
+    if browser is not None and paper.downloadable:
+        outcome, tried = _via_browser(paper, library, browser, earlier_link)
+        if outcome is not None:
+            return outcome
+
     placeholder = library.write_placeholder(paper)
-    return Outcome(paper, "manual", str(placeholder))
+    return Outcome(paper, "manual", f"{placeholder}{tried}")
+
+
+def _blocked(paper, library, browser, resolution, earlier_link, problem) -> Outcome:
+    """The host refused the script. Try the browser, else leave a link to the copy."""
+    tried = ""
+    if browser is not None:
+        outcome, tried = _via_browser(paper, library, browser, resolution.url, earlier_link)
+        if outcome is not None:
+            return outcome
+
+    if resolution.discovered:
+        placeholder = library.write_placeholder(paper, resolution.url)
+        return Outcome(paper, "manual",
+                       f"{placeholder} (host blocks scripts; open copy found){tried}")
+    return Outcome(paper, "failed", f"{resolution.url}: {problem}{tried}")
+
+
+def _via_browser(paper, library, browser, *known_links) -> tuple[Outcome | None, str]:
+    """(outcome if a browser download worked, else a note on what was tried)."""
+    urls = candidate_urls(paper, *known_links)
+    if not urls:
+        return None, " (browser: no PDF link to try)"
+
+    problems = []
+    for url in urls:
+        try:
+            library.store(paper, browser.fetch_pdf(url), url)
+        except (BrowserError, NotAPdf) as problem:
+            problems.append(str(problem))
+            continue
+        return Outcome(paper, "got", f"browser: {url}"), ""
+    return None, f" (browser: {'; '.join(problems)})"
 
 
 def _record(reading_list: ReadingList, paper: Paper, url: str) -> str:
