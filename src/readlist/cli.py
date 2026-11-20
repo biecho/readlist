@@ -69,8 +69,8 @@ def _fetch(args, reading_list: ReadingList, http: Fetcher) -> int:
 
     failed = [o for o in outcomes if o.status == "failed"]
     manual = [o for o in outcomes if o.status == "manual"]
-    print(f"\n{len(outcomes)} papers: {len(failed)} failed, {len(manual)} need a manual fetch"
-          f" (see the .url files in {library.root}).")
+    where = f" (see the .url files in {library.root})" if manual else ""
+    print(f"\n{len(outcomes)} papers: {len(failed)} failed, {len(manual)} need a manual fetch{where}.")
     return 1 if failed else 0
 
 
