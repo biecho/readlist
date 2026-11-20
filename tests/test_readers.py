@@ -100,10 +100,10 @@ groups:
 
 def test_ranking_orders_across_groups_and_reports_unranked(tmp_path):
     reading_list = readers.read(write(tmp_path, "list.yaml", RANKED))
-    ranked, unranked = reading_list.ranked()
-    assert [p.id for p in ranked] == ["b", "a"] and [p.id for p in unranked] == ["c"]
+    [(title, ranked)], unranked = reading_list.ranked()
+    assert title == "" and [p.id for p in ranked] == ["b", "a"] and [p.id for p in unranked] == ["c"]
     assert ranked[0].why == "First." and ranked[1].why == "Second."
-    assert reading_list.select(tag="core").ranking == ("a",)
+    assert reading_list.select(tag="core").ranked_ids() == ("a",)
 
 
 def test_ranking_rejects_unknown_and_repeated_ids(tmp_path):
@@ -115,4 +115,19 @@ def test_ranking_rejects_unknown_and_repeated_ids(tmp_path):
 
 def test_without_ranking_list_order_is_the_ranking(tmp_path):
     reading_list = readers.read(write(tmp_path, "l.yaml", RANKED.replace("ranking: [b, a]\n", "")))
-    assert [p.id for p in reading_list.ranked()[0]] == ["a", "b", "c"]
+    [(title, papers)], _ = reading_list.ranked()
+    assert [p.id for p in papers] == ["a", "b", "c"]
+
+
+def test_ranking_sections_and_group_titles(tmp_path):
+    text = RANKED.replace("ranking: [b, a]", "ranking:\n  Start: [b]\n  Then: [a, c]")
+    text = text.replace("  - id: g\n", "  - id: g\n    title: The Group\n")
+    reading_list = readers.read(write(tmp_path, "l.yaml", text))
+    sections, unranked = reading_list.ranked()
+    assert [(t, [p.id for p in ps]) for t, ps in sections] == [("Start", ["b"]), ("Then", ["a", "c"])]
+    assert unranked == [] and reading_list.by_group()[0][0] == "The Group"
+
+
+def test_invalid_yaml_is_a_format_error(tmp_path):
+    with pytest.raises(FormatError, match="invalid YAML"):
+        readers.read(write(tmp_path, "l.yaml", "ranking:\n  A: b: c\n"))

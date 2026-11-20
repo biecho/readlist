@@ -14,12 +14,12 @@ import argparse
 import sys
 from pathlib import Path
 
-from readlist import __version__, commands, config, readers
+from readlist import __version__, commands, config, readers, render
 from readlist.http import Fetcher, Http
 from readlist.library import Library
 from readlist.model import FormatError, ReadingList
 
-MARKS = {"have": "x", "got": "x", "would": ">", "manual": "~", "failed": "!", "missing": " "}
+MARKS = {"got": "x", "have": "x", "would": ">", "manual": "~", "failed": "!"}
 
 
 def main(argv: list[str] | None = None, http: Fetcher | None = None) -> int:
@@ -59,34 +59,33 @@ def _fetch(args, reading_list: ReadingList, http: Fetcher) -> int:
 
 
 def _list(args, reading_list: ReadingList) -> int:
-    library = Library(_out_dir(args))
-    for group in reading_list.groups():
-        print(group or "(ungrouped)")
-        for paper in reading_list.select(group=group).papers:
-            status = library.status(paper)
-            star = "*" if "core" in paper.tags else " "
-            print(f"  [{MARKS[status]}]{star} {paper.stem}  {paper.title}")
-    print("\n[x] have  [~] manual fetch  [ ] not fetched yet   * core")
+    """Papers by group, numbered by their position in the group (the filename prefix)."""
+    sections = [(title, [(p.number or i, p) for i, p in enumerate(papers, start=1)])
+                for title, papers in reading_list.by_group()]
+    _show(args, reading_list, sections)
     return 0
 
 
 def _rank(args, reading_list: ReadingList) -> int:
-    library = Library(_out_dir(args))
-    ranked, unranked = reading_list.ranked()
-    if not reading_list.ranking:
-        print("No `ranking:` in this list, so this is the list order.\n")
+    """Papers in reading order, numbered 1..n across sections."""
+    sections, unranked = reading_list.ranked()
+    numbered, position = [], 0
+    for title, papers in sections:
+        numbered.append((title, [(position + i, p) for i, p in enumerate(papers, start=1)]))
+        position += len(papers)
 
-    width = len(str(len(ranked)))
-    for position, paper in enumerate(ranked, start=1):
-        star = "*" if "core" in paper.tags else " "
-        print(f"{position:>{width}}. [{MARKS[library.status(paper)]}]{star} {paper.title}")
-        if paper.why:
-            print(f"{' ' * (width + 7)}{paper.why}")
-
+    _show(args, reading_list, numbered)
     if unranked:
-        print(f"\nNot ranked: {', '.join(p.id for p in unranked)}")
-    print("\n[x] have  [~] manual fetch  [ ] not fetched yet   * core")
+        print(f"\nNot in the ranking: {', '.join(p.id for p in unranked)}")
     return 0
+
+
+def _show(args, reading_list: ReadingList, sections) -> None:
+    library = Library(_out_dir(args))
+    style = render.Style.for_stdout()
+    print(render.entries(sections, library, style, render.terminal_width()))
+    print()
+    print(render.summary(list(reading_list.papers), library, style))
 
 
 def _check(args, reading_list: ReadingList, http: Fetcher) -> int:

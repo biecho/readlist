@@ -15,7 +15,12 @@ position within their group; the number prefixes the filename. Unknown keys
 (reading notes, say) are ignored.
 
 An optional top-level `ranking:` lists paper ids from read-first to
-read-last, across groups; `readlist rank` shows it.
+read-last, across groups; `readlist rank` shows it. Either a plain list of
+ids, or a mapping from section title to a list of ids:
+
+    ranking:
+      Map: [li2024sok, misono2024cvm]
+      Frontier: [schluter2024wesee, demeulemeester2025badram]
 """
 
 from __future__ import annotations
@@ -24,10 +29,13 @@ from pathlib import Path
 
 import yaml
 
-from readlist.model import FormatError, Paper, ReadingList
+from readlist.model import FormatError, Paper, ReadingList, Section
 
 def read_yaml(path: Path) -> ReadingList:
-    data = yaml.safe_load(path.read_text()) or {}
+    try:
+        data = yaml.safe_load(path.read_text()) or {}
+    except yaml.YAMLError as problem:
+        raise FormatError(f"{path}: invalid YAML: {problem}") from problem
     if not isinstance(data, dict):
         raise FormatError(f"{path}: top level must be a mapping")
 
@@ -39,24 +47,37 @@ def read_yaml(path: Path) -> ReadingList:
     else:
         raise FormatError(f"{path}: needs a top-level 'groups' (or 'stages') or 'papers' list")
 
+    titles = {str(g["id"]): str(g.get("title") or "") for g in groups or ()}
     ranking = _ranking(data.get("ranking"), papers, path)
-    return ReadingList(source=path, papers=tuple(papers), ranking=ranking)
+    return ReadingList(source=path, papers=tuple(papers), ranking=ranking, group_titles=titles)
 
 
-def _ranking(entries, papers: list[Paper], path: Path) -> tuple[str, ...]:
-    """The top-level `ranking:`, a list of paper ids. Every id must exist, once."""
+def _ranking(entries, papers: list[Paper], path: Path) -> tuple[Section, ...]:
+    """The top-level `ranking:`. Every id must exist, and appear once."""
     if entries is None:
         return ()
-    ranking = tuple(str(entry) for entry in entries)
-    known = {p.id for p in papers}
+    elif isinstance(entries, dict):
+        sections = tuple(Section(str(title), _ids(ids, path)) for title, ids in entries.items())
+    elif isinstance(entries, list):
+        sections = (Section("", _ids(entries, path)),)
+    else:
+        raise FormatError(f"{path}: ranking must be a list of ids or a mapping of sections")
 
-    unknown = [i for i in ranking if i not in known]
+    ranked = [i for section in sections for i in section.ids]
+    known = {p.id for p in papers}
+    unknown = [i for i in ranked if i not in known]
     if unknown:
         raise FormatError(f"{path}: ranking names unknown ids: {', '.join(unknown)}")
-    repeated = sorted({i for i in ranking if ranking.count(i) > 1})
+    repeated = sorted({i for i in ranked if ranked.count(i) > 1})
     if repeated:
         raise FormatError(f"{path}: ranking repeats ids: {', '.join(repeated)}")
-    return ranking
+    return sections
+
+
+def _ids(entries, path: Path) -> tuple[str, ...]:
+    if not isinstance(entries, list):
+        raise FormatError(f"{path}: each ranking section must be a list of ids")
+    return tuple(str(entry) for entry in entries)
 
 
 def _grouped(groups, path: Path) -> list[Paper]:

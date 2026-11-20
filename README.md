@@ -58,25 +58,39 @@ complete list.
 ### Rank what to read first
 
 Groups and positions say where a paper belongs; a top-level `ranking:` says
-when to read it. List paper ids from read-first to read-last, across groups:
+when to read it. List paper ids from read-first to read-last, across groups,
+optionally under section titles:
 
 ```yaml
 ranking:
-  - li2024sok
-  - lee2020keystone
-  - costan2016sgx
+  Map:
+    - li2024sok
+  Designs:
+    - lee2020keystone
+  Foundations:
+    - costan2016sgx
 ```
 
-`readlist rank` prints that order with each paper's status and its `why` (or
-`read_for`) line. readlist rejects a ranking that names an unknown id or
-repeats one, and lists the papers it leaves out.
+`readlist rank` prints that order with each paper's authors, venue, status
+and its `why` (or `read_for`) line. A plain list of ids works too. readlist
+rejects a ranking that names an unknown id or repeats one, and lists the
+papers it leaves out.
 
 ```
-$ readlist rank reading-list.yaml --tag core
- 1. [~]* SoK: Understanding Design Choices and Pitfalls of TEEs
-         Design space of TEEs, mapped to the attack class each choice invites.
- 2. [x]* Keystone: An Open Framework for Architecting TEEs
-         Open RISC-V TEE; the academic prototyping base.
+$ readlist rank reading-list.yaml
+MAP
+
+  1  SoK: Understanding Design Choices and Pitfalls of Trusted Execution Environments
+     Li et al. · AsiaCCS 2024 · core · fetch by hand
+     Design space of TEEs, mapped to the attack class each choice invites.
+
+DESIGNS
+
+  2  Keystone: An Open Framework for Architecting TEEs
+     Lee et al. · EuroSys 2020 · core · downloaded
+     Open RISC-V TEE; the academic prototyping base.
+
+3 papers · 2 downloaded · 1 to fetch by hand (open the .url files in papers/)
 ```
 
 readlist also reads BibTeX and CSV:

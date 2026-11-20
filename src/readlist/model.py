@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
@@ -47,10 +48,19 @@ class Paper:
 
 
 @dataclass(frozen=True)
+class Section:
+    """A stretch of the ranking, e.g. 'Map' or 'Frontier'. The title may be empty."""
+
+    title: str
+    ids: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class ReadingList:
     source: Path
     papers: tuple[Paper, ...] = field(default_factory=tuple)
-    ranking: tuple[str, ...] = ()  # paper ids, read-first to read-last
+    ranking: tuple[Section, ...] = ()  # read-first to read-last
+    group_titles: Mapping[str, str] = field(default_factory=dict)
 
     def select(self, *, group: str | None = None, tag: str | None = None) -> ReadingList:
         papers = self.papers
@@ -58,24 +68,31 @@ class ReadingList:
             papers = tuple(p for p in papers if p.group == group)
         if tag is not None:
             papers = tuple(p for p in papers if tag in p.tags)
+
         kept = {p.id for p in papers}
-        return replace(self, papers=papers, ranking=tuple(i for i in self.ranking if i in kept))
+        sections = (Section(s.title, tuple(i for i in s.ids if i in kept)) for s in self.ranking)
+        return replace(self, papers=papers, ranking=tuple(s for s in sections if s.ids))
 
-    def ranked(self) -> tuple[list[Paper], list[Paper]]:
-        """(papers in ranking order, papers the ranking leaves out).
+    def ranked_ids(self) -> tuple[str, ...]:
+        return tuple(i for section in self.ranking for i in section.ids)
 
-        Without a ranking, the list order is the ranking.
+    def ranked(self) -> tuple[list[tuple[str, list[Paper]]], list[Paper]]:
+        """([(section title, papers)] in reading order, papers the ranking leaves out).
+
+        Without a ranking, the groups in list order are the ranking.
         """
         if not self.ranking:
-            return list(self.papers), []
+            return self.by_group(), []
         by_id = {p.id: p for p in self.papers}
-        ranked = [by_id[i] for i in self.ranking]
-        unranked = [p for p in self.papers if p.id not in set(self.ranking)]
-        return ranked, unranked
+        sections = [(s.title, [by_id[i] for i in s.ids]) for s in self.ranking]
+        ranked = set(self.ranked_ids())
+        return sections, [p for p in self.papers if p.id not in ranked]
 
-    def groups(self) -> list[str]:
-        """Group names in order of first appearance."""
-        return list(dict.fromkeys(p.group for p in self.papers))
+    def by_group(self) -> list[tuple[str, list[Paper]]]:
+        """[(group title, papers)] in list order."""
+        groups = dict.fromkeys(p.group for p in self.papers)
+        return [(self.group_titles.get(g) or g, [p for p in self.papers if p.group == g])
+                for g in groups]
 
 
 class FormatError(ValueError):
