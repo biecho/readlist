@@ -93,6 +93,21 @@ DESIGNS
 3 papers · 2 downloaded · 1 to fetch by hand (open the .url files in papers/)
 ```
 
+### Open what you picked
+
+`readlist open` opens papers by their number in `readlist rank`, by range,
+by id, or by ranking section. It opens downloaded PDFs in your PDF app, and
+the page of any paper you still have to fetch by hand in your browser.
+
+```
+readlist open reading-list.yaml 4 7-9            # numbers stay fixed, even with filters
+readlist open reading-list.yaml badram
+readlist open reading-list.yaml --section map --app "PDF Expert"
+```
+
+Set `pdf_app` in your config to skip `--app`. Opening more than 10 papers at
+once needs `--all`.
+
 readlist also reads BibTeX and CSV:
 
 ```
@@ -125,11 +140,12 @@ into your list, so your collaborators skip the lookup.
 readlist fetch LIST [--dry-run] [--force] [--record]
 readlist list  LIST               # what you have, what still needs a manual fetch
 readlist rank  LIST               # the reading order, read-first on top
+readlist open  LIST [N|N-M|ID ...] [--app APP]   # open papers in your PDF app
 readlist check LIST [--online]    # lint the list; --online verifies arXiv ids
 ```
 
-Every command accepts `--group G`, `--tag T` and `--out DIR` (default: `papers/`
-next to the list).
+Every command accepts `--section S` (a ranking section), `--group G`, `--tag T`
+and `--out DIR` (default: `papers/` next to the list).
 
 ## Configure
 
@@ -138,6 +154,7 @@ Put your settings in `~/.config/readlist/config.toml`:
 ```toml
 email = "you@example.org"        # turns on Unpaywall
 semantic_scholar_key = "..."     # optional: your own Semantic Scholar quota
+pdf_app = "PDF Expert"           # optional: the app readlist open uses
 ```
 
 `READLIST_EMAIL` and `S2_API_KEY` override the file.

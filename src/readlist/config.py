@@ -4,6 +4,7 @@
 
     email = "you@example.org"          # Unpaywall requires a contact email
     semantic_scholar_key = "..."       # optional private Semantic Scholar quota
+    pdf_app = "PDF Expert"             # `readlist open` uses it; default: the system's
 
 Environment variables READLIST_EMAIL and S2_API_KEY override the file.
 """
@@ -21,6 +22,7 @@ from pathlib import Path
 class Config:
     email: str = ""
     semantic_scholar_key: str = ""
+    pdf_app: str = ""
 
 
 def load(env: Mapping[str, str] | None = None) -> Config:
@@ -30,6 +32,7 @@ def load(env: Mapping[str, str] | None = None) -> Config:
     return Config(
         email=env.get("READLIST_EMAIL") or str(stored.get("email", "")),
         semantic_scholar_key=env.get("S2_API_KEY") or str(stored.get("semantic_scholar_key", "")),
+        pdf_app=str(stored.get("pdf_app", "")),
     )
 
 

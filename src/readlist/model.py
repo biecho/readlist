@@ -62,16 +62,39 @@ class ReadingList:
     ranking: tuple[Section, ...] = ()  # read-first to read-last
     group_titles: Mapping[str, str] = field(default_factory=dict)
 
-    def select(self, *, group: str | None = None, tag: str | None = None) -> ReadingList:
+    def select(self, *, group: str | None = None, tag: str | None = None,
+               section: str | None = None) -> ReadingList:
         papers = self.papers
         if group is not None:
             papers = tuple(p for p in papers if p.group == group)
         if tag is not None:
             papers = tuple(p for p in papers if tag in p.tags)
+        if section is not None:
+            in_section = set(self._section(section).ids)
+            papers = tuple(p for p in papers if p.id in in_section)
 
         kept = {p.id for p in papers}
         sections = (Section(s.title, tuple(i for i in s.ids if i in kept)) for s in self.ranking)
         return replace(self, papers=papers, ranking=tuple(s for s in sections if s.ids))
+
+    def positions(self) -> dict[str, int]:
+        """Reading-order number per paper id, 1-based; unranked papers follow."""
+        sections, unranked = self.ranked()
+        ordered = [p for _, papers in sections for p in papers] + unranked
+        return {p.id: n for n, p in enumerate(ordered, start=1)}
+
+    def pick(self, selectors: list[str]) -> list[Paper]:
+        """Papers named by reading-order number ('4'), range ('4-8') or id, in that order."""
+        positions = self.positions()
+        by_number = {n: i for i, n in positions.items()}
+        by_id = {p.id: p for p in self.papers}
+
+        picked: list[Paper] = []
+        for selector in selectors:
+            for paper_id in _expand(selector, by_number, by_id):
+                if by_id[paper_id] not in picked:
+                    picked.append(by_id[paper_id])
+        return picked
 
     def ranked_ids(self) -> tuple[str, ...]:
         return tuple(i for section in self.ranking for i in section.ids)
@@ -88,6 +111,13 @@ class ReadingList:
         ranked = set(self.ranked_ids())
         return sections, [p for p in self.papers if p.id not in ranked]
 
+    def _section(self, title: str) -> Section:
+        for section in self.ranking:
+            if section.title.lower() == title.lower():
+                return section
+        names = ", ".join(s.title for s in self.ranking if s.title) or "none"
+        raise SelectionError(f"no ranking section '{title}' (sections: {names})")
+
     def by_group(self) -> list[tuple[str, list[Paper]]]:
         """[(group title, papers)] in list order."""
         groups = dict.fromkeys(p.group for p in self.papers)
@@ -97,3 +127,23 @@ class ReadingList:
 
 class FormatError(ValueError):
     """The reading list file is malformed."""
+
+
+class SelectionError(ValueError):
+    """A selector names nothing in the list."""
+
+
+def _expand(selector: str, by_number: dict[int, str], by_id: dict[str, Paper]) -> list[str]:
+    if selector in by_id:
+        return [selector]
+
+    low, dash, high = selector.partition("-")
+    if low.isdigit() and (not dash or high.isdigit()):
+        first, last = int(low), int(high) if dash else int(low)
+        missing = [n for n in range(first, last + 1) if n not in by_number]
+        if missing or first > last:
+            raise SelectionError(f"'{selector}': no paper at position {missing[0] if missing else first}"
+                                 f" (positions run 1-{len(by_number)})")
+        return [by_number[n] for n in range(first, last + 1)]
+
+    raise SelectionError(f"'{selector}' is neither a paper id nor a position")

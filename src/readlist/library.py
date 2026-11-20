@@ -85,6 +85,16 @@ class Library:
         target.write_text(f"[InternetShortcut]\nURL={url or placeholder_url(paper)}\n")
         return target
 
+    def placeholder_target(self, paper: Paper) -> str | None:
+        """The link a paper's .url placeholder holds, if it has one."""
+        path = self.placeholder_path(paper)
+        if not path.exists():
+            return None
+        for line in path.read_text().splitlines():
+            if line.startswith("URL="):
+                return line[len("URL="):].strip()
+        return None
+
     def placeholders(self) -> list[Path]:
         return sorted(self.root.rglob("*.url"))
 

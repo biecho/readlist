@@ -5,6 +5,8 @@
     readlist fetch refs.bib --groups reading-list.csv
     readlist list reading-list.yaml             what you have, what is missing
     readlist rank reading-list.yaml             the reading order, read-first on top
+    readlist open reading-list.yaml 4 7-9       open papers by their number in `rank`
+    readlist open reading-list.yaml --section map --app "PDF Expert"
     readlist check reading-list.yaml --online   lint the list, verify arXiv ids
 """
 
@@ -14,21 +16,24 @@ import argparse
 import sys
 from pathlib import Path
 
-from readlist import __version__, commands, config, readers, render
+from readlist import __version__, commands, config, opener, readers, render
 from readlist.http import Fetcher, Http
 from readlist.library import Library
-from readlist.model import FormatError, ReadingList
+from readlist.model import FormatError, ReadingList, SelectionError
 
+OPEN_LIMIT = 10  # opening more at once needs --all
 MARKS = {"got": "x", "have": "x", "would": ">", "manual": "~", "failed": "!"}
 
 
 def main(argv: list[str] | None = None, http: Fetcher | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
-        reading_list = _load(args)
-    except (FormatError, OSError) as problem:
+        full = readers.read(args.list, bbl=args.bbl, groups=args.groups)
+        reading_list = full.select(group=args.group, tag=args.tag, section=args.section)
+    except (FormatError, SelectionError, OSError) as problem:
         print(f"readlist: {problem}", file=sys.stderr)
         return 2
+    args.positions = full.positions()
 
     http = http or Http()
     if args.command == "fetch":
@@ -39,6 +44,8 @@ def main(argv: list[str] | None = None, http: Fetcher | None = None) -> int:
         return _rank(args, reading_list)
     elif args.command == "check":
         return _check(args, reading_list, http)
+    elif args.command == "open":
+        return _open(args, full, reading_list)
     else:
         raise AssertionError(f"unknown command {args.command}")
 
@@ -67,17 +74,54 @@ def _list(args, reading_list: ReadingList) -> int:
 
 
 def _rank(args, reading_list: ReadingList) -> int:
-    """Papers in reading order, numbered 1..n across sections."""
+    """Papers in reading order. Numbers come from the whole list, so filters keep them."""
     sections, unranked = reading_list.ranked()
-    numbered, position = [], 0
-    for title, papers in sections:
-        numbered.append((title, [(position + i, p) for i, p in enumerate(papers, start=1)]))
-        position += len(papers)
+    numbered = [(title, [(args.positions[p.id], p) for p in papers]) for title, papers in sections]
 
     _show(args, reading_list, numbered)
     if unranked:
         print(f"\nNot in the ranking: {', '.join(p.id for p in unranked)}")
     return 0
+
+
+def _open(args, full: ReadingList, reading_list: ReadingList) -> int:
+    """Open picked papers: PDFs in the PDF app, placeholders in the browser."""
+    try:
+        papers = full.pick(args.papers) if args.papers else list(reading_list.papers)
+    except SelectionError as problem:
+        print(f"readlist: {problem}", file=sys.stderr)
+        return 2
+    if args.papers:
+        selected = {p.id for p in reading_list.papers}
+        papers = [p for p in papers if p.id in selected]
+
+    if not papers:
+        print("readlist: nothing selected. Name papers by number or id, or use --section,"
+              " --group or --tag.", file=sys.stderr)
+        return 2
+    if not args.papers and len(papers) > OPEN_LIMIT and not args.all:
+        print(f"readlist: that selects {len(papers)} papers; add --all to open them all.",
+              file=sys.stderr)
+        return 2
+
+    library = Library(_out_dir(args))
+    app = args.app or config.load().pdf_app
+    not_fetched = []
+    for paper in papers:
+        number = args.positions[paper.id]
+        link = library.placeholder_target(paper)
+        if library.has(paper):
+            opener.open_pdf(library.pdf_path(paper), app)
+            print(f"  {number:>2}  {paper.title}")
+        elif link:
+            opener.open_url(link)
+            print(f"  {number:>2}  {paper.title}  (fetch by hand: opened {link})")
+        else:
+            not_fetched.append(paper)
+
+    for paper in not_fetched:
+        print(f"  {args.positions[paper.id]:>2}  {paper.title}  (not fetched; run readlist fetch)")
+    return 1 if not_fetched else 0
 
 
 def _show(args, reading_list: ReadingList, sections) -> None:
@@ -96,11 +140,6 @@ def _check(args, reading_list: ReadingList, http: Fetcher) -> int:
     return 1 if problems else 0
 
 
-def _load(args) -> ReadingList:
-    reading_list = readers.read(args.list, bbl=args.bbl, groups=args.groups)
-    return reading_list.select(group=args.group, tag=args.tag)
-
-
 def _out_dir(args) -> Path:
     return args.out if args.out else args.list.resolve().parent / "papers"
 
@@ -116,6 +155,7 @@ def _parser() -> argparse.ArgumentParser:
     common.add_argument("--groups", type=Path, help="CSV assigning each id a folder (id/citekey + group/cluster)")
     common.add_argument("--group", help="only this group")
     common.add_argument("--tag", help="only papers with this tag (e.g. core)")
+    common.add_argument("--section", help="only this section of the ranking (e.g. Map)")
     common.add_argument("--out", type=Path, help="PDF folder (default: papers/ next to the list)")
 
     commands_ = parser.add_subparsers(dest="command", required=True)
@@ -125,6 +165,10 @@ def _parser() -> argparse.ArgumentParser:
     fetch.add_argument("--record", action="store_true", help="write discovered links back into the list")
     commands_.add_parser("list", parents=[common], help="show what you have and what is missing")
     commands_.add_parser("rank", parents=[common], help="show the reading order, read-first on top")
+    open_ = commands_.add_parser("open", parents=[common], help="open papers in your PDF app")
+    open_.add_argument("papers", nargs="*", help="reading-order numbers (4), ranges (4-8) or ids")
+    open_.add_argument("--app", help='PDF app, e.g. "PDF Expert" (default: pdf_app in config)')
+    open_.add_argument("--all", action="store_true", help=f"allow opening more than {OPEN_LIMIT} papers")
     check = commands_.add_parser("check", parents=[common], help="lint the list")
     check.add_argument("--online", action="store_true", help="also verify arXiv ids against titles")
     return parser
