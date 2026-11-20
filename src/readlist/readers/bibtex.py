@@ -13,17 +13,16 @@ Fields used per entry:
 An entry whose only source is a non-PDF `url` is a web resource (a spec, a
 repository) and gets a link placeholder rather than a download.
 
-With a .bbl file, only cited entries are kept and they are numbered as in the
-paper (shown by `readlist list`).
+With a .bbl file, only cited entries are kept, and the citation order becomes
+the reading order, so numbers match the paper's.
 """
 
 from __future__ import annotations
 
 import re
-from dataclasses import replace
 from pathlib import Path
 
-from readlist.model import ARXIV_ID, FormatError, Paper, ReadingList
+from readlist.model import ARXIV_ID, FormatError, Paper, ReadingList, Section
 
 ENTRY_START = re.compile(r"@\s*(\w+)\s*\{", re.ASCII)
 SKIPPED_TYPES = {"comment", "string", "preamble"}
@@ -37,12 +36,12 @@ def read_bibtex(path: Path, *, bbl: Path | None = None) -> ReadingList:
     if bbl is None:
         return ReadingList(source=path, papers=tuple(papers.values()))
 
-    cited = cited_keys(bbl.read_text())
+    cited = list(dict.fromkeys(cited_keys(bbl.read_text())))
     missing = [key for key in cited if key not in papers]
     if missing:
         raise FormatError(f"{bbl}: cites keys not in {path.name}: {', '.join(missing)}")
-    numbered = tuple(_numbered(papers[key], n) for n, key in enumerate(cited, start=1))
-    return ReadingList(source=path, papers=numbered)
+    return ReadingList(source=path, papers=tuple(papers[key] for key in cited),
+                       ranking=(Section("", tuple(cited)),))
 
 
 def parse_bibtex(text: str) -> list[tuple[str, dict[str, str]]]:
@@ -92,10 +91,6 @@ def _paper(key: str, fields: dict[str, str]) -> Paper:
         landing=landing,
         open_copy=fields.get("opencopy", "").lower() != "none",
     )
-
-
-def _numbered(paper: Paper, number: int) -> Paper:
-    return replace(paper, number=number)
 
 
 def _arxiv(fields: dict[str, str]) -> str:

@@ -1,22 +1,27 @@
 """The folder of PDFs: <root>/<group>/<id>.pdf.
 
+Looking never changes anything: `state()` only reads. `sync()` (run by
+`readlist fetch`) moves PDFs whose paper moved to another group and removes
+placeholders a PDF has replaced.
+
 Annotations are never lost. Every download is checksummed into
 <root>/.readlist-manifest.json, keyed by paper id. A file that no longer
 matches its checksum has been edited (highlights, comments); before it would
-be replaced, it is moved to <root>/annotated-backup/. Papers that move to
-another group have their files moved, not re-fetched.
+be replaced, it is moved to <root>/annotated-backup/.
 
-Papers without an open copy get an <id>.url placeholder (an Internet
-Shortcut, which double-clicks open on macOS, Windows and most Linux desktops).
+Papers without an open copy get an <id>.url placeholder, an Internet Shortcut
+that opens with a double-click on macOS, Windows and most Linux desktops.
 """
 
 from __future__ import annotations
 
+import enum
 import hashlib
 import json
 import shutil
 import time
 import urllib.parse
+from dataclasses import dataclass
 from pathlib import Path
 
 from readlist.model import Paper
@@ -24,6 +29,24 @@ from readlist.model import Paper
 MANIFEST_NAME = ".readlist-manifest.json"
 BACKUP_DIR_NAME = "annotated-backup"
 MIN_PDF_BYTES = 10_000  # anything smaller is an error page, not a paper
+
+
+class Availability(enum.Enum):
+    DOWNLOADED = "downloaded"
+    FETCH_BY_HAND = "fetch by hand"  # a .url placeholder points at the paper
+    LINK = "link"  # a talk or web page: there is only a link
+    NOT_FETCHED = "not fetched"
+
+    @property
+    def label(self) -> str:
+        return self.value
+
+
+@dataclass(frozen=True)
+class State:
+    availability: Availability
+    path: Path | None = None  # the PDF, when downloaded
+    link: str = ""  # where to look, when there is no PDF
 
 
 class NotAPdf(ValueError):
@@ -36,28 +59,29 @@ class Library:
         self._manifest_path = root / MANIFEST_NAME
         self._manifest = self._load_manifest()
 
+    def state(self, paper: Paper) -> State:
+        """Where the paper stands. Reads only."""
+        pdf = self._existing_pdf(paper)
+        if pdf is not None:
+            return State(Availability.DOWNLOADED, path=pdf)
+        elif paper.link_only:
+            return State(Availability.LINK, link=paper.landing)
+        elif self.placeholder_path(paper).exists():
+            return State(Availability.FETCH_BY_HAND, link=self._placeholder_target(paper))
+        else:
+            return State(Availability.NOT_FETCHED)
+
     def pdf_path(self, paper: Paper) -> Path:
         return self._folder(paper) / f"{paper.id}.pdf"
 
     def placeholder_path(self, paper: Paper) -> Path:
         return self._folder(paper) / f"{paper.id}.url"
 
-    def has(self, paper: Paper) -> bool:
-        """True if the PDF is present, after moving it to where the list now puts it."""
+    def sync(self, paper: Paper) -> None:
+        """Move the paper's PDF to where the list now puts it; drop an obsolete placeholder."""
         self._relocate(paper)
-        present = self.pdf_path(paper).exists()
-        if present:
+        if self.pdf_path(paper).exists():
             self.placeholder_path(paper).unlink(missing_ok=True)
-        return present
-
-    def status(self, paper: Paper) -> str:
-        """'have', 'manual' (placeholder only) or 'missing'."""
-        if self.has(paper):
-            return "have"
-        elif self.placeholder_path(paper).exists():
-            return "manual"
-        else:
-            return "missing"
 
     def store(self, paper: Paper, body: bytes, url: str) -> Path | None:
         """Write a downloaded PDF. Returns the backup path if an annotated copy was moved aside."""
@@ -85,18 +109,24 @@ class Library:
         target.write_text(f"[InternetShortcut]\nURL={url or placeholder_url(paper)}\n")
         return target
 
-    def placeholder_target(self, paper: Paper) -> str | None:
-        """The link a paper's .url placeholder holds, if it has one."""
-        path = self.placeholder_path(paper)
-        if not path.exists():
-            return None
-        for line in path.read_text().splitlines():
-            if line.startswith("URL="):
-                return line[len("URL="):].strip()
+    def blocked_link(self, paper: Paper) -> str:
+        """The link an existing placeholder holds (e.g. a PDF a site refused to scripts)."""
+        return self._placeholder_target(paper) if self.placeholder_path(paper).exists() else ""
+
+    def _existing_pdf(self, paper: Paper) -> Path | None:
+        """The PDF where the list puts it, or where it was saved before the paper moved."""
+        if self.pdf_path(paper).exists():
+            return self.pdf_path(paper)
+        record = self._manifest.get(paper.id)
+        if record is not None and (self.root / record["path"]).exists():
+            return self.root / record["path"]
         return None
 
-    def placeholders(self) -> list[Path]:
-        return sorted(self.root.rglob("*.url"))
+    def _placeholder_target(self, paper: Paper) -> str:
+        for line in self.placeholder_path(paper).read_text().splitlines():
+            if line.startswith("URL="):
+                return line[len("URL="):].strip()
+        return ""
 
     def _folder(self, paper: Paper) -> Path:
         return self.root / paper.group if paper.group else self.root

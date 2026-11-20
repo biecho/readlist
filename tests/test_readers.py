@@ -12,10 +12,11 @@ def write(tmp_path: Path, name: str, text: str) -> Path:
     return path
 
 
-def test_yaml_groups_number_papers_within_each_group(tmp_path):
+def test_yaml_groups_and_tags(tmp_path):
     path = write(tmp_path, "list.yaml", """
 stages:
   - id: a
+    title: Group A
     papers:
       - {id: p1, title: One, core: true}
       - {id: p2, title: Two, tags: [x]}
@@ -23,10 +24,11 @@ stages:
     papers:
       - {id: p3, title: Three, arxiv: "2010.08440"}
 """)
-    papers = readers.read(path).papers
-    assert [(p.group, p.number, p.id) for p in papers] == [("a", 1, "p1"), ("a", 2, "p2"), ("b", 1, "p3")]
-    assert papers[0].tags == {"core"}
-    assert papers[2].arxiv == "2010.08440"
+    reading_list = readers.read(path)
+    papers = reading_list.papers
+    assert [(p.group, p.id) for p in papers] == [("a", "p1"), ("a", "p2"), ("b", "p3")]
+    assert papers[0].tags == {"core"} and papers[2].arxiv == "2010.08440"
+    assert reading_list.group_titles == {"a": "Group A", "b": ""}
 
 
 def test_yaml_rejects_unquoted_arxiv_id(tmp_path):
@@ -70,14 +72,15 @@ def test_bibtex_fields(tmp_path):
 def test_bibtex_bbl_keeps_cited_entries_in_citation_order(tmp_path):
     bib = write(tmp_path, "refs.bib", BIB)
     bbl = write(tmp_path, "main.bbl", r"\bibitem{lee2020} x \bibitem[Co16]{costan2016} y")
-    papers = readers.read(bib, bbl=bbl).papers
-    assert [(p.number, p.id) for p in papers] == [(1, "lee2020"), (2, "costan2016")]
+    reading_list = readers.read(bib, bbl=bbl)
+    assert [(e.number, e.paper.id) for e in reading_list.entries()] == [(1, "lee2020"),
+                                                                       (2, "costan2016")]
 
 
 def test_csv_list_and_group_override(tmp_path):
     listing = write(tmp_path, "list.csv", "id,title,tags\na,Paper A,core;x\nb,Paper B,\n")
     groups = write(tmp_path, "groups.csv", "citekey,cluster\na,costs\n")
-    papers = readers.read(listing, groups=groups).papers
+    papers = readers.read(listing, folders=groups).papers
     assert [(p.id, p.group) for p in papers] == [("a", "costs"), ("b", "unsorted")]
     assert papers[0].tags == {"core", "x"}
 
@@ -87,47 +90,32 @@ def test_unknown_format(tmp_path):
         readers.read(write(tmp_path, "list.txt", ""))
 
 
-RANKED = """
-ranking: [b, a]
-groups:
-  - id: g
-    papers:
-      - {id: a, title: A, read_for: "Second.", tags: [core]}
-      - {id: b, title: B, why: First.}
-      - {id: c, title: C}
-"""
+
+def test_ranking_sections_keep_their_titles(tmp_path):
+    path = write(tmp_path, "l.yaml", """
+ranking:
+  Start: [b]
+  Then: [a]
+papers:
+  - {id: a, title: A, read_for: Second.}
+  - {id: b, title: B, why: First.}
+""")
+    reading_list = readers.read(path)
+    assert [(s.title, s.ids) for s in reading_list.ranking] == [("Start", ("b",)), ("Then", ("a",))]
+    assert reading_list.papers[0].why == "Second." and reading_list.papers[1].why == "First."
 
 
-def test_ranking_orders_across_groups_and_reports_unranked(tmp_path):
-    reading_list = readers.read(write(tmp_path, "list.yaml", RANKED))
-    [(title, ranked)], unranked = reading_list.ranked()
-    assert title == "" and [p.id for p in ranked] == ["b", "a"] and [p.id for p in unranked] == ["c"]
-    assert ranked[0].why == "First." and ranked[1].why == "Second."
-    assert reading_list.select(tag="core").ranked_ids() == ("a",)
+def test_ranking_with_unknown_ids_still_reads(tmp_path):
+    path = write(tmp_path, "l.yaml", "ranking: [a, z, a]\npapers:\n  - {id: a, title: A}\n")
+    assert readers.read(path).ranking_problems() == [
+        "ranking names unknown id 'z'", "ranking repeats 'a'"]
 
 
-def test_ranking_rejects_unknown_and_repeated_ids(tmp_path):
-    with pytest.raises(FormatError, match="unknown ids: z"):
-        readers.read(write(tmp_path, "l.yaml", RANKED.replace("[b, a]", "[b, z]")))
-    with pytest.raises(FormatError, match="repeats ids: a"):
-        readers.read(write(tmp_path, "l.yaml", RANKED.replace("[b, a]", "[a, a]")))
-
-
-def test_without_ranking_list_order_is_the_ranking(tmp_path):
-    reading_list = readers.read(write(tmp_path, "l.yaml", RANKED.replace("ranking: [b, a]\n", "")))
-    [(title, papers)], _ = reading_list.ranked()
-    assert [p.id for p in papers] == ["a", "b", "c"]
-
-
-def test_ranking_sections_and_group_titles(tmp_path):
-    text = RANKED.replace("ranking: [b, a]", "ranking:\n  Start: [b]\n  Then: [a, c]")
-    text = text.replace("  - id: g\n", "  - id: g\n    title: The Group\n")
-    reading_list = readers.read(write(tmp_path, "l.yaml", text))
-    sections, unranked = reading_list.ranked()
-    assert [(t, [p.id for p in ps]) for t, ps in sections] == [("Start", ["b"]), ("Then", ["a", "c"])]
-    assert unranked == [] and reading_list.by_group()[0][0] == "The Group"
-
-
-def test_invalid_yaml_is_a_format_error(tmp_path):
-    with pytest.raises(FormatError, match="invalid YAML"):
+def test_invalid_yaml_reports_file_and_line(tmp_path):
+    with pytest.raises(FormatError, match=r"l\.yaml:2: mapping values are not allowed here"):
         readers.read(write(tmp_path, "l.yaml", "ranking:\n  A: b: c\n"))
+
+
+def test_missing_file(tmp_path):
+    with pytest.raises(FormatError, match="nope.yaml: no such file"):
+        readers.read(tmp_path / "nope.yaml")

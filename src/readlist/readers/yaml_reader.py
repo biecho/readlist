@@ -10,12 +10,11 @@ Either grouped:
             title: Intel SGX Explained
             pdf: https://...
 
-or flat, with a top-level `papers:` list. Papers are numbered by their
-position within their group (shown by `readlist list`). Unknown keys
-(reading notes, say) are ignored.
+or flat, with a top-level `papers:` list. Unknown keys (reading notes, say)
+are ignored.
 
 An optional top-level `ranking:` lists paper ids from read-first to
-read-last, across groups; `readlist rank` shows it. Either a plain list of
+read-last, across groups; it sets the reading order `readlist ls` shows. Either a plain list of
 ids, or a mapping from section title to a list of ids:
 
     ranking:
@@ -35,7 +34,7 @@ def read_yaml(path: Path) -> ReadingList:
     try:
         data = yaml.safe_load(path.read_text()) or {}
     except yaml.YAMLError as problem:
-        raise FormatError(f"{path}: invalid YAML: {problem}") from problem
+        raise FormatError(_yaml_error(path, problem)) from problem
     if not isinstance(data, dict):
         raise FormatError(f"{path}: top level must be a mapping")
 
@@ -43,35 +42,33 @@ def read_yaml(path: Path) -> ReadingList:
     if groups is not None:
         papers = _grouped(groups, path)
     elif "papers" in data:
-        papers = _numbered(data["papers"], group="", path=path)
+        papers = _papers(data["papers"], group="", path=path)
     else:
         raise FormatError(f"{path}: needs a top-level 'groups' (or 'stages') or 'papers' list")
 
     titles = {str(g["id"]): str(g.get("title") or "") for g in groups or ()}
-    ranking = _ranking(data.get("ranking"), papers, path)
+    ranking = _ranking(data.get("ranking"), path)
     return ReadingList(source=path, papers=tuple(papers), ranking=ranking, group_titles=titles)
 
 
-def _ranking(entries, papers: list[Paper], path: Path) -> tuple[Section, ...]:
-    """The top-level `ranking:`. Every id must exist, and appear once."""
+def _ranking(entries, path: Path) -> tuple[Section, ...]:
+    """The top-level `ranking:`. Unknown or repeated ids are left for `readlist check`."""
     if entries is None:
         return ()
     elif isinstance(entries, dict):
-        sections = tuple(Section(str(title), _ids(ids, path)) for title, ids in entries.items())
+        return tuple(Section(str(title), _ids(ids, path)) for title, ids in entries.items())
     elif isinstance(entries, list):
-        sections = (Section("", _ids(entries, path)),)
+        return (Section("", _ids(entries, path)),)
     else:
         raise FormatError(f"{path}: ranking must be a list of ids or a mapping of sections")
 
-    ranked = [i for section in sections for i in section.ids]
-    known = {p.id for p in papers}
-    unknown = [i for i in ranked if i not in known]
-    if unknown:
-        raise FormatError(f"{path}: ranking names unknown ids: {', '.join(unknown)}")
-    repeated = sorted({i for i in ranked if ranked.count(i) > 1})
-    if repeated:
-        raise FormatError(f"{path}: ranking repeats ids: {', '.join(repeated)}")
-    return sections
+
+def _yaml_error(path: Path, problem: yaml.YAMLError) -> str:
+    """One line, with the line number: 'list.yaml:25: mapping values are not allowed here'."""
+    mark = getattr(problem, "problem_mark", None)
+    where = f"{path}:{mark.line + 1}" if mark is not None else str(path)
+    reason = getattr(problem, "problem", None) or "invalid YAML"
+    return f"{where}: {reason}"
 
 
 def _ids(entries, path: Path) -> tuple[str, ...]:
@@ -85,16 +82,16 @@ def _grouped(groups, path: Path) -> list[Paper]:
     for group in groups:
         if "id" not in group:
             raise FormatError(f"{path}: every group needs an 'id'")
-        papers.extend(_numbered(group.get("papers") or [], group=str(group["id"]), path=path))
+        papers.extend(_papers(group.get("papers") or [], group=str(group["id"]), path=path))
     return papers
 
 
-def _numbered(entries, *, group: str, path: Path) -> list[Paper]:
-    return [_paper(entry, group, number, path) for number, entry in enumerate(entries, start=1)]
+def _papers(entries, *, group: str, path: Path) -> list[Paper]:
+    return [_paper(entry, group, position, path) for position, entry in enumerate(entries, start=1)]
 
 
-def _paper(entry: dict, group: str, number: int, path: Path) -> Paper:
-    fallback_name = f"#{number} in {group or 'list'}"
+def _paper(entry: dict, group: str, position: int, path: Path) -> Paper:
+    fallback_name = f"#{position} in {group or 'list'}"
     where = f"{path}: paper {entry.get('id', fallback_name)}"
     for required in ("id", "title"):
         if not entry.get(required):
@@ -108,7 +105,6 @@ def _paper(entry: dict, group: str, number: int, path: Path) -> Paper:
         id=str(entry["id"]),
         title=str(entry["title"]),
         group=group,
-        number=number,
         authors=tuple(str(a) for a in entry.get("authors") or ()),
         year=int(entry["year"]) if entry.get("year") else None,
         venue=str(entry.get("venue") or ""),

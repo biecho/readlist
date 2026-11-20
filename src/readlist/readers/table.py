@@ -3,14 +3,11 @@
 Columns (header names; only id and title are required):
   id (or citekey/key), title, group (or cluster/stage), authors (separated by ;),
   year, venue, kind, tags (separated by ;), pdf, arxiv, doi, landing, open_copy
-
-Papers are numbered by their position within their group.
 """
 
 from __future__ import annotations
 
 import csv
-from dataclasses import replace
 from pathlib import Path
 
 from readlist.model import FormatError, Paper, ReadingList
@@ -24,13 +21,8 @@ def read_csv(path: Path) -> ReadingList:
     with path.open(newline="") as handle:
         rows = list(csv.DictReader(handle))
 
-    counters: dict[str, int] = {}
-    papers = []
-    for line, row in enumerate(rows, start=2):
-        paper = _paper(row, path, line)
-        counters[paper.group] = counters.get(paper.group, 0) + 1
-        papers.append(_with_number(paper, counters[paper.group]))
-    return ReadingList(source=path, papers=tuple(papers))
+    papers = tuple(_paper(row, path, line) for line, row in enumerate(rows, start=2))
+    return ReadingList(source=path, papers=papers)
 
 
 def _paper(row: dict[str, str], path: Path, line: int) -> Paper:
@@ -54,10 +46,6 @@ def _paper(row: dict[str, str], path: Path, line: int) -> Paper:
         landing=row.get("landing", ""),
         open_copy=row.get("open_copy", "").lower() not in FALSE_WORDS,
     )
-
-
-def _with_number(paper: Paper, number: int) -> Paper:
-    return replace(paper, number=number)
 
 
 def _first(row: dict[str, str], names: tuple[str, ...]) -> str:

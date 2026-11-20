@@ -6,6 +6,7 @@ import pytest
 
 from conftest import PDF, FakeHttp
 from readlist import browser, commands
+from readlist.commands import Result
 from readlist.config import Config
 from readlist.library import Library
 from readlist.model import Paper, ReadingList
@@ -75,15 +76,15 @@ def test_candidate_urls_add_acm_pattern_and_skip_web_pages():
 
 def run_fetch(tmp_path, paper, http, fake):
     reading_list = ReadingList(source=tmp_path / "l.yaml", papers=(paper,))
-    return commands.fetch(reading_list, Library(tmp_path / "papers"), http, Config(),
+    return commands.fetch(reading_list.entries(), Library(tmp_path / "papers"), http, Config(),
                           browser=make_browser(fake) if fake else None)
 
 
 def test_paper_without_open_copy_comes_through_the_browser(tmp_path):
-    paper = Paper(id="p", title="T", group="g", number=1, doi="10.1145/1.2", open_copy=False)
+    paper = Paper(id="p", title="T", group="g", doi="10.1145/1.2", open_copy=False)
     fake = FakeBrowserUse({ACM_PDF: CHALLENGE_THEN_PDF})
     [outcome] = run_fetch(tmp_path, paper, FakeHttp(), fake)
-    assert outcome.status == "got" and outcome.detail == f"browser: {ACM_PDF}"
+    assert outcome.result is Result.GOT and outcome.detail == f"browser: {ACM_PDF}"
     assert (tmp_path / "papers/g/p.pdf").read_bytes() == PDF
 
 
@@ -91,20 +92,20 @@ def test_blocked_list_link_retried_in_browser(tmp_path):
     paper = Paper(id="p", title="T", pdf=ACM_PDF)
     fake = FakeBrowserUse({ACM_PDF: CHALLENGE_THEN_PDF})
     [outcome] = run_fetch(tmp_path, paper, FakeHttp({ACM_PDF: 403}), fake)
-    assert outcome.status == "got" and fake.opened() == [ACM_PDF]
+    assert outcome.result is Result.GOT and fake.opened() == [ACM_PDF]
 
 
 def test_without_browser_flag_behaviour_is_unchanged(tmp_path):
     paper = Paper(id="p", title="T", pdf=ACM_PDF)
     [outcome] = run_fetch(tmp_path, paper, FakeHttp({ACM_PDF: 403}), None)
-    assert outcome.status == "failed"
+    assert outcome.result is Result.FAILED
 
 
 def test_browser_failure_leaves_placeholder_with_note(tmp_path):
     paper = Paper(id="p", title="T", doi="10.1145/1.2", landing="https://landing", open_copy=False)
     fake = FakeBrowserUse({ACM_PDF: CHALLENGE_THEN_PDF}, status=403)
     [outcome] = run_fetch(tmp_path, paper, FakeHttp(), fake)
-    assert outcome.status == "manual" and "browser:" in outcome.detail
+    assert outcome.result is Result.FETCH_BY_HAND and "browser:" in outcome.detail
     assert "URL=https://landing" in (tmp_path / "papers/p.url").read_text()
 
 
@@ -112,4 +113,4 @@ def test_talks_never_open_the_browser(tmp_path):
     paper = replace(Paper(id="t", title="Talk", kind="talk"), landing="https://x.org/slides.pdf")
     fake = FakeBrowserUse({})
     [outcome] = run_fetch(tmp_path, paper, FakeHttp(), fake)
-    assert outcome.status == "manual" and fake.opened() == []
+    assert outcome.result is Result.LINK and fake.opened() == []

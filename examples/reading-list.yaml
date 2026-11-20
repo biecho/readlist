@@ -1,7 +1,7 @@
 # A small example: getting into trusted execution environments (TEEs).
 #
-#   readlist fetch examples/reading-list.yaml
-#   readlist fetch examples/reading-list.yaml --tag core
+#   readlist -f examples/reading-list.yaml fetch
+#   readlist -f examples/reading-list.yaml ls -t core
 #
 # Extra keys like `read_for` are ignored by readlist; keep your notes here.
 

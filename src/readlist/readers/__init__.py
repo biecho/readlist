@@ -14,15 +14,17 @@ from readlist.readers.yaml_reader import read_yaml
 UNSORTED = "unsorted"
 
 
-def read(path: Path, *, bbl: Path | None = None, groups: Path | None = None) -> ReadingList:
-    """Read any supported list. `groups` is a CSV that assigns each id a folder."""
+def read(path: Path, *, bbl: Path | None = None, folders: Path | None = None) -> ReadingList:
+    """Read any supported list. `folders` is a CSV that assigns each id a folder."""
+    if not path.is_file():
+        raise FormatError(f"{path}: no such file")
     reading_list = _read_by_suffix(path, bbl)
-    if groups is not None:
-        reading_list = apply_groups(reading_list, groups)
+    if folders is not None:
+        reading_list = apply_folders(reading_list, folders)
     return reading_list
 
 
-def apply_groups(reading_list: ReadingList, groups_csv: Path) -> ReadingList:
+def apply_folders(reading_list: ReadingList, groups_csv: Path) -> ReadingList:
     """File every paper under the group the CSV gives it; unlisted papers go to 'unsorted'."""
     with groups_csv.open(newline="") as handle:
         rows = list(csv.DictReader(handle))
@@ -41,6 +43,8 @@ def _read_by_suffix(path: Path, bbl: Path | None) -> ReadingList:
     suffix = path.suffix.lower()
     if bbl is not None and suffix != ".bib":
         raise FormatError("--bbl only applies to a .bib list")
+    if bbl is not None and not bbl.is_file():
+        raise FormatError(f"{bbl}: no such file")
 
     if suffix in (".yaml", ".yml"):
         return read_yaml(path)

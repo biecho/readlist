@@ -1,16 +1,24 @@
-"""Terminal output for `readlist rank` and `readlist list`.
+"""How readlist prints. Three views of the same entries:
 
-    MAP
-      1  SoK: Understanding Design Choices and Pitfalls of Trusted Execution
-         Environments
-         Li et al. · AsiaCCS 2024 · core · fetch by hand
-         Design space of TEEs, mapped to the attack class each choice invites.
+terminal (stdout is a terminal):
+
+    FRONTIER
+
+       8  BadRAM: Practical Memory Aliasing Attacks on Trusted Execution Environments
+          De Meulemeester et al. · IEEE S&P 2025 · core · downloaded · demeulemeester2025badram
+          Read in full. $10 SPD trick -> address aliasing -> SEV-SNP integrity broken.
+
+lines (stdout is a pipe): one tab-separated line per paper,
+    number, id, status, section, title, path-or-link
+
+json (--json): one JSON array.
 
 Color only on a terminal, and never when NO_COLOR is set.
 """
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import sys
@@ -18,55 +26,112 @@ import textwrap
 from dataclasses import dataclass
 from pathlib import Path
 
-from readlist.library import Library
-from readlist.model import Paper
+from readlist.commands import Outcome, Result
+from readlist.library import Availability, Library, State
+from readlist.model import Entry, Paper
 
 MAX_WIDTH = 100
-STATUS_WORDS = {"have": "downloaded", "manual": "fetch by hand", "missing": "not fetched"}
 
 
-def entries(
-    sections: list[tuple[str, list[tuple[int, Paper]]]],
-    library: Library,
-    style: Style,
-    width: int,
-) -> str:
-    """Numbered papers under section headings. Numbers come from the caller."""
-    number_width = max((len(str(n)) for _, items in sections for n, _ in items), default=1)
+# --- views of entries ----------------------------------------------------------
+
+def terminal(entries: list[Entry], library: Library, style: Style, width: int) -> str:
+    """Numbered papers under section headings."""
+    number_width = max((len(str(e.number)) for e in entries), default=1)
     indent = " " * (2 + number_width + 2)
 
-    blocks = []
-    for title, items in sections:
-        if title:
-            blocks.append(style.heading(title.upper()))
-        for number, paper in items:
-            blocks.append(_entry(number, paper, library, style, width, number_width, indent))
+    blocks, section = [], None
+    for entry in entries:
+        if entry.section != section:
+            section = entry.section
+            if section:
+                blocks.append(style.heading(section.upper()))
+        blocks.append(_entry(entry, library.state(entry.paper), style, width, number_width, indent))
     return "\n\n".join(blocks)
 
 
-def summary(papers: list[Paper], library: Library, style: Style) -> str:
-    counts = {status: 0 for status in STATUS_WORDS}
-    links = 0
-    for paper in papers:
-        if paper.link_only:
-            links += 1
-        else:
-            counts[library.status(paper)] += 1
+def lines(entries: list[Entry], library: Library) -> str:
+    rows = []
+    for entry in entries:
+        state = library.state(entry.paper)
+        where = str(state.path) if state.path else state.link
+        fields = (str(entry.number), entry.paper.id, state.availability.label, entry.section,
+                  entry.paper.title, where)
+        rows.append("\t".join(_one_line(f) for f in fields))
+    return "\n".join(rows)
 
-    parts = [f"{len(papers)} papers", style.green(f"{counts['have']} downloaded")]
-    if counts["manual"]:
-        parts.append(style.yellow(f"{counts['manual']} to fetch by hand") +
-                     style.dim(f" (open the .url files in {_display_path(library.root)})"))
-    if counts["missing"]:
-        parts.append(style.red(f"{counts['missing']} not fetched") +
-                     style.dim(" (run readlist fetch)"))
-    if links:
-        parts.append(style.dim(f"{links} {'link' if links == 1 else 'links'}"))
+
+def as_json(entries: list[Entry], library: Library) -> str:
+    records = []
+    for entry in entries:
+        paper, state = entry.paper, library.state(entry.paper)
+        records.append({
+            "number": entry.number, "id": paper.id, "title": paper.title,
+            "section": entry.section, "group": paper.group, "authors": list(paper.authors),
+            "year": paper.year, "venue": paper.venue, "kind": paper.kind,
+            "tags": sorted(paper.tags), "status": state.availability.label,
+            "path": str(state.path) if state.path else None, "link": state.link or None,
+            "why": paper.why,
+        })
+    return json.dumps(records, indent=2, ensure_ascii=False)
+
+
+def summary(entries: list[Entry], library: Library, style: Style) -> str:
+    """'26 papers · 24 downloaded · 1 to fetch by hand · 1 link'."""
+    counts = {a: 0 for a in Availability}
+    for entry in entries:
+        counts[library.state(entry.paper).availability] += 1
+
+    parts = [f"{len(entries)} papers", style.green(f"{counts[Availability.DOWNLOADED]} downloaded")]
+    if counts[Availability.FETCH_BY_HAND]:
+        parts.append(style.yellow(f"{counts[Availability.FETCH_BY_HAND]} to fetch by hand"))
+    if counts[Availability.NOT_FETCHED]:
+        parts.append(style.red(f"{counts[Availability.NOT_FETCHED]} not fetched"))
+    if counts[Availability.LINK]:
+        n = counts[Availability.LINK]
+        parts.append(style.dim(f"{n} {'link' if n == 1 else 'links'}"))
     return " · ".join(parts)
 
 
+# --- fetch output --------------------------------------------------------------
+
+RESULT_WIDTH = max(len(r.label) for r in Result)
+
+
+def fetch_line(outcome: Outcome, id_width: int, style: Style) -> str:
+    """'  got            schluter2024wesee   arxiv 2404.03526'."""
+    label = outcome.result.label.ljust(RESULT_WIDTH)
+    paper_id = outcome.entry.paper.id.ljust(id_width)
+    return f"  {_result_color(outcome.result, style)(label)}  {paper_id}  {relative(outcome.detail)}"
+
+
+def _result_color(result: Result, style: Style):
+    if result is Result.GOT or result is Result.HAVE:
+        return style.green
+    elif result is Result.FETCH_BY_HAND or result is Result.WOULD_GET:
+        return style.yellow
+    elif result is Result.FAILED:
+        return style.red
+    elif result is Result.LINK:
+        return style.dim
+    else:
+        raise AssertionError(f"unknown result {result}")
+
+
+def relative(text: str) -> str:
+    """Shorten absolute paths in `text` to paths relative to the current folder."""
+    cwd = str(Path.cwd()) + os.sep
+    return text.replace(cwd, "")
+
+
+# --- terminal helpers ----------------------------------------------------------
+
 def terminal_width() -> int:
     return min(shutil.get_terminal_size((MAX_WIDTH, 24)).columns, MAX_WIDTH)
+
+
+def stdout_is_terminal() -> bool:
+    return sys.stdout.isatty()
 
 
 @dataclass(frozen=True)
@@ -74,75 +139,70 @@ class Style:
     color: bool
 
     @classmethod
-    def for_stdout(cls) -> Style:
-        return cls(color=sys.stdout.isatty() and "NO_COLOR" not in os.environ)
+    def for_stream(cls, stream) -> Style:
+        return cls(color=stream.isatty() and "NO_COLOR" not in os.environ)
 
     def heading(self, text: str) -> str:
-        return self._wrap(text, "1;36")
+        return self._paint(text, "1;36")
 
     def bold(self, text: str) -> str:
-        return self._wrap(text, "1")
+        return self._paint(text, "1")
 
     def dim(self, text: str) -> str:
-        return self._wrap(text, "2")
+        return self._paint(text, "2")
 
     def green(self, text: str) -> str:
-        return self._wrap(text, "32")
+        return self._paint(text, "32")
 
     def yellow(self, text: str) -> str:
-        return self._wrap(text, "33")
+        return self._paint(text, "33")
 
     def red(self, text: str) -> str:
-        return self._wrap(text, "31")
+        return self._paint(text, "31")
 
     def cyan(self, text: str) -> str:
-        return self._wrap(text, "36")
+        return self._paint(text, "36")
 
-    def _wrap(self, text: str, code: str) -> str:
+    def _paint(self, text: str, code: str) -> str:
         return f"\033[{code}m{text}\033[0m" if self.color else text
 
 
-def _entry(number, paper, library, style, width, number_width, indent) -> str:
+def _entry(entry: Entry, state: State, style: Style, width: int, number_width: int,
+           indent: str) -> str:
+    paper = entry.paper
     text_width = max(width - len(indent), 30)
-    title_lines = textwrap.wrap(paper.title, text_width) or [paper.id]
+    title = textwrap.wrap(paper.title, text_width) or [paper.id]
 
-    lines = [f"  {style.dim(str(number).rjust(number_width))}  {style.bold(title_lines[0])}"]
-    lines += [indent + style.bold(line) for line in title_lines[1:]]
-    lines.append(indent + _meta(paper, library, style))
-    lines += [indent + line for line in textwrap.wrap(paper.why, text_width)]
-    return "\n".join(lines)
+    out = [f"  {style.dim(str(entry.number).rjust(number_width))}  {style.bold(title[0])}"]
+    out += [indent + style.bold(line) for line in title[1:]]
+    out.append(indent + _meta(paper, state, style))
+    out += [indent + line for line in textwrap.wrap(paper.why, text_width)]
+    return "\n".join(out)
 
 
-def _meta(paper: Paper, library: Library, style: Style) -> str:
-    parts = []
-    authors = short_authors(paper.authors)
-    if authors:
-        parts.append(authors)
-    venue = " ".join(part for part in (paper.venue, str(paper.year or "")) if part)
-    if venue:
-        parts.append(venue)
-    if paper.kind != "paper":
-        parts.append(paper.kind)
-
-    rendered = [style.dim(part) for part in parts]
+def _meta(paper: Paper, state: State, style: Style) -> str:
+    plain = [short_authors(paper.authors),
+             " ".join(part for part in (paper.venue, str(paper.year or "")) if part),
+             paper.kind if paper.kind != "paper" else ""]
+    parts = [style.dim(part) for part in plain if part]
     if "core" in paper.tags:
-        rendered.append(style.cyan("core"))
-    rendered.append(_status(paper, library.status(paper), style))
-    return style.dim(" · ").join(rendered)
+        parts.append(style.cyan("core"))
+    parts.append(_status(state.availability, style))
+    parts.append(style.dim(paper.id))
+    return style.dim(" · ").join(parts)
 
 
-def _status(paper: Paper, status: str, style: Style) -> str:
-    word = STATUS_WORDS[status]
-    if paper.link_only:
-        return style.dim("link")
-    elif status == "have":
-        return style.green(word)
-    elif status == "manual":
-        return style.yellow(word)
-    elif status == "missing":
-        return style.red(word)
+def _status(availability: Availability, style: Style) -> str:
+    if availability is Availability.DOWNLOADED:
+        return style.green(availability.label)
+    elif availability is Availability.FETCH_BY_HAND:
+        return style.yellow(availability.label)
+    elif availability is Availability.NOT_FETCHED:
+        return style.red(availability.label)
+    elif availability is Availability.LINK:
+        return style.dim(availability.label)
     else:
-        raise AssertionError(f"unknown status {status}")
+        raise AssertionError(f"unknown availability {availability}")
 
 
 def short_authors(authors: tuple[str, ...]) -> str:
@@ -173,8 +233,5 @@ def _surname(name: str) -> str:
     return " ".join(words[start:])
 
 
-def _display_path(path: Path) -> str:
-    try:
-        return str(path.relative_to(Path.cwd())) + "/"
-    except ValueError:
-        return str(path).replace(str(Path.home()), "~", 1) + "/"
+def _one_line(text: str) -> str:
+    return " ".join(text.split())
