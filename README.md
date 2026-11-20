@@ -13,8 +13,8 @@ readlist fetch reading-list.yaml
   [x] got    costan2016sgx    pdf link in list
   [x] got    lee2020keystone  arxiv 1907.10119
   [x] got    xu2015controlled semantic scholar
-  [~] manual li2024sok        papers/01-map/01-li2024sok.url
-  [x] have   yu2023capstone   papers/05-angle/01-yu2023capstone.pdf
+  [~] manual li2024sok        papers/01-map/li2024sok.url
+  [x] have   yu2023capstone   papers/05-angle/yu2023capstone.pdf
 ```
 
 readlist downloads only open copies. When it finds none, it writes a `.url`
@@ -47,8 +47,7 @@ groups:
         arxiv: "1907.10119"     # quote it, or YAML turns 2010.08440 into 2010.0844
 ```
 
-readlist saves each paper as `papers/<group>/<NN>-<id>.pdf`, where NN is its
-position in the group. Each paper needs an `id` and a `title`; add `pdf`,
+readlist saves each paper as `papers/<group>/<id>.pdf`. Each paper needs an `id` and a `title`; add `pdf`,
 `arxiv` or `doi` to help readlist find it. Optional fields: `authors`, `year`,
 `venue`, `tags`, `landing` (the page a `.url` file opens), `kind: talk` or
 `kind: web` (link only, never downloaded), and `open_copy: false` (accept only

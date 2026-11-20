@@ -11,7 +11,7 @@ Either grouped:
             pdf: https://...
 
 or flat, with a top-level `papers:` list. Papers are numbered by their
-position within their group; the number prefixes the filename. Unknown keys
+position within their group (shown by `readlist list`). Unknown keys
 (reading notes, say) are ignored.
 
 An optional top-level `ranking:` lists paper ids from read-first to

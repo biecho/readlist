@@ -24,7 +24,7 @@ stages:
       - {id: p3, title: Three, arxiv: "2010.08440"}
 """)
     papers = readers.read(path).papers
-    assert [(p.group, p.stem) for p in papers] == [("a", "01-p1"), ("a", "02-p2"), ("b", "01-p3")]
+    assert [(p.group, p.number, p.id) for p in papers] == [("a", 1, "p1"), ("a", 2, "p2"), ("b", 1, "p3")]
     assert papers[0].tags == {"core"}
     assert papers[2].arxiv == "2010.08440"
 
@@ -71,7 +71,7 @@ def test_bibtex_bbl_keeps_cited_entries_in_citation_order(tmp_path):
     bib = write(tmp_path, "refs.bib", BIB)
     bbl = write(tmp_path, "main.bbl", r"\bibitem{lee2020} x \bibitem[Co16]{costan2016} y")
     papers = readers.read(bib, bbl=bbl).papers
-    assert [p.stem for p in papers] == ["01-lee2020", "02-costan2016"]
+    assert [(p.number, p.id) for p in papers] == [(1, "lee2020"), (2, "costan2016")]
 
 
 def test_csv_list_and_group_override(tmp_path):

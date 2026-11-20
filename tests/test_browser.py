@@ -84,7 +84,7 @@ def test_paper_without_open_copy_comes_through_the_browser(tmp_path):
     fake = FakeBrowserUse({ACM_PDF: CHALLENGE_THEN_PDF})
     [outcome] = run_fetch(tmp_path, paper, FakeHttp(), fake)
     assert outcome.status == "got" and outcome.detail == f"browser: {ACM_PDF}"
-    assert (tmp_path / "papers/g/01-p.pdf").read_bytes() == PDF
+    assert (tmp_path / "papers/g/p.pdf").read_bytes() == PDF
 
 
 def test_blocked_list_link_retried_in_browser(tmp_path):

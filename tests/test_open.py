@@ -46,15 +46,15 @@ def test_section_selection_is_case_insensitive(listing):
 def test_open_section_opens_pdfs_in_app_and_placeholders_in_browser(listing, monkeypatch, capsys):
     papers = listing.parent / "papers" / "g"
     papers.mkdir(parents=True)
-    (papers / "01-a.pdf").write_bytes(PDF)
-    (papers / "02-b.url").write_text("[InternetShortcut]\nURL=https://landing/b\n")
+    (papers / "a.pdf").write_bytes(PDF)
+    (papers / "b.url").write_text("[InternetShortcut]\nURL=https://landing/b\n")
 
     opened, browsed = [], []
     monkeypatch.setattr(opener, "open_pdf", lambda path, app="": opened.append((path.name, app)))
     monkeypatch.setattr(opener, "open_url", browsed.append)
 
     assert cli.main(["open", str(listing), "--section", "Map", "--app", "PDF Expert"]) == 0
-    assert opened == [("01-a.pdf", "PDF Expert")]
+    assert opened == [("a.pdf", "PDF Expert")]
     assert browsed == ["https://landing/b"]
     assert "fetch by hand" in capsys.readouterr().out
 

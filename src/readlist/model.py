@@ -19,7 +19,7 @@ class Paper:
     id: str
     title: str
     group: str = ""
-    number: int | None = None  # filename prefix, e.g. reading order or citation number
+    number: int | None = None  # position in its group, or citation number (display only)
     authors: tuple[str, ...] = ()
     year: int | None = None
     venue: str = ""
@@ -31,13 +31,6 @@ class Paper:
     landing: str = ""  # human-facing page, used for placeholders
     why: str = ""  # why read it (`why` or `read_for` in YAML)
     open_copy: bool = True  # False: the only acceptable copy is an explicit `pdf`
-
-    @property
-    def stem(self) -> str:
-        """Filename without extension."""
-        if self.number is None:
-            return self.id
-        return f"{self.number:02d}-{self.id}"
 
     @property
     def downloadable(self) -> bool:

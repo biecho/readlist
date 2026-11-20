@@ -1,12 +1,12 @@
-"""The folder of PDFs: <root>/<group>/<NN-id>.pdf.
+"""The folder of PDFs: <root>/<group>/<id>.pdf.
 
 Annotations are never lost. Every download is checksummed into
 <root>/.readlist-manifest.json, keyed by paper id. A file that no longer
 matches its checksum has been edited (highlights, comments); before it would
 be replaced, it is moved to <root>/annotated-backup/. Papers that move to
-another group or position in the list have their files moved, not re-fetched.
+another group have their files moved, not re-fetched.
 
-Papers without an open copy get a <stem>.url placeholder (an Internet
+Papers without an open copy get an <id>.url placeholder (an Internet
 Shortcut, which double-clicks open on macOS, Windows and most Linux desktops).
 """
 
@@ -37,10 +37,10 @@ class Library:
         self._manifest = self._load_manifest()
 
     def pdf_path(self, paper: Paper) -> Path:
-        return self._folder(paper) / f"{paper.stem}.pdf"
+        return self._folder(paper) / f"{paper.id}.pdf"
 
     def placeholder_path(self, paper: Paper) -> Path:
-        return self._folder(paper) / f"{paper.stem}.url"
+        return self._folder(paper) / f"{paper.id}.url"
 
     def has(self, paper: Paper) -> bool:
         """True if the PDF is present, after moving it to where the list now puts it."""

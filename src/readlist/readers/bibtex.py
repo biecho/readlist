@@ -14,7 +14,7 @@ An entry whose only source is a non-PDF `url` is a web resource (a spec, a
 repository) and gets a link placeholder rather than a download.
 
 With a .bbl file, only cited entries are kept and they are numbered as in the
-paper; the number prefixes the filename.
+paper (shown by `readlist list`).
 """
 
 from __future__ import annotations
