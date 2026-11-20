@@ -53,7 +53,8 @@ def _numbered(entries, *, group: str, path: Path) -> list[Paper]:
 
 
 def _paper(entry: dict, group: str, number: int, path: Path) -> Paper:
-    where = f"{path}: paper {entry.get('id', f'#{number} in {group or 'list'}')}"
+    fallback_name = f"#{number} in {group or 'list'}"
+    where = f"{path}: paper {entry.get('id', fallback_name)}"
     for required in ("id", "title"):
         if not entry.get(required):
             raise FormatError(f"{where}: missing '{required}'")
