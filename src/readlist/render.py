@@ -46,8 +46,12 @@ def entries(
 
 def summary(papers: list[Paper], library: Library, style: Style) -> str:
     counts = {status: 0 for status in STATUS_WORDS}
+    links = 0
     for paper in papers:
-        counts[library.status(paper)] += 1
+        if paper.link_only:
+            links += 1
+        else:
+            counts[library.status(paper)] += 1
 
     parts = [f"{len(papers)} papers", style.green(f"{counts['have']} downloaded")]
     if counts["manual"]:
@@ -56,6 +60,8 @@ def summary(papers: list[Paper], library: Library, style: Style) -> str:
     if counts["missing"]:
         parts.append(style.red(f"{counts['missing']} not fetched") +
                      style.dim(" (run readlist fetch)"))
+    if links:
+        parts.append(style.dim(f"{links} {'link' if links == 1 else 'links'}"))
     return " · ".join(parts)
 
 
@@ -121,13 +127,15 @@ def _meta(paper: Paper, library: Library, style: Style) -> str:
     rendered = [style.dim(part) for part in parts]
     if "core" in paper.tags:
         rendered.append(style.cyan("core"))
-    rendered.append(_status(library.status(paper), style))
+    rendered.append(_status(paper, library.status(paper), style))
     return style.dim(" · ").join(rendered)
 
 
-def _status(status: str, style: Style) -> str:
+def _status(paper: Paper, status: str, style: Style) -> str:
     word = STATUS_WORDS[status]
-    if status == "have":
+    if paper.link_only:
+        return style.dim("link")
+    elif status == "have":
         return style.green(word)
     elif status == "manual":
         return style.yellow(word)

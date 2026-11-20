@@ -22,11 +22,9 @@ Resolver = Callable[[Paper, Fetcher, Config], "Resolution | None"]
 
 
 def resolve(paper: Paper, http: Fetcher, config: Config) -> Resolution | None:
-    if not paper.downloadable:
-        return None
-
     for resolver in chain():
-        if not paper.open_copy and resolver is not explicit.resolve:
+        # open_copy: false means lookups would find another version (e.g. a preprint).
+        if not (paper.searchable and paper.open_copy) and resolver is not explicit.resolve:
             continue
         resolution = resolver(paper, http, config)
         if resolution is not None:

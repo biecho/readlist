@@ -116,12 +116,15 @@ def _open(args, full: ReadingList, reading_list: ReadingList) -> int:
     library = Library(_out_dir(args))
     app = args.app or config.load().pdf_app
     not_fetched = []
-    for paper in papers:
+    for paper in sorted(papers, key=lambda p: args.positions[p.id]):
         number = args.positions[paper.id]
         link = library.placeholder_target(paper)
         if library.has(paper):
             opener.open_pdf(library.pdf_path(paper), app)
             print(f"  {number:>2}  {paper.title}")
+        elif link and paper.link_only:
+            opener.open_url(link)
+            print(f"  {number:>2}  {paper.title}  ({paper.kind}: opened {link})")
         elif link:
             opener.open_url(link)
             print(f"  {number:>2}  {paper.title}  (fetch by hand: opened {link})")

@@ -69,3 +69,22 @@ def test_open_pdf_builds_macos_command(monkeypatch):
     monkeypatch.setattr(opener.sys, "platform", "darwin")
     opener.open_pdf(Path("/p/a.pdf"), "PDF Expert", run=commands.append)
     assert commands == [["open", "-a", "PDF Expert", "/p/a.pdf"]]
+
+
+def test_open_follows_reading_order_and_labels_talks(tmp_path, monkeypatch, capsys):
+    listing = tmp_path / "list.yaml"
+    listing.write_text("""
+ranking: [talk, paper]
+papers:
+  - {id: paper, title: Paper, landing: "https://landing/p"}
+  - {id: talk, title: Talk, kind: talk, landing: "https://talk"}
+""")
+    (tmp_path / "papers").mkdir()
+    (tmp_path / "papers/paper.url").write_text("[InternetShortcut]\nURL=https://landing/p\n")
+    (tmp_path / "papers/talk.url").write_text("[InternetShortcut]\nURL=https://talk\n")
+    monkeypatch.setattr(opener, "open_url", lambda url: None)
+
+    assert cli.main(["open", str(listing), "paper", "talk"]) == 0
+    lines = capsys.readouterr().out.splitlines()
+    assert "1  Talk  (talk: opened https://talk)" in lines[0]
+    assert "2  Paper  (fetch by hand: opened https://landing/p)" in lines[1]

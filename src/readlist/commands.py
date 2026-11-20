@@ -106,7 +106,7 @@ def _no_open_copy(paper, library, browser, dry_run, earlier_link) -> Outcome:
         return Outcome(paper, "manual", "no open copy found")
 
     tried = ""
-    if browser is not None and paper.downloadable:
+    if browser is not None and paper.searchable:
         outcome, tried = _via_browser(paper, library, browser, earlier_link)
         if outcome is not None:
             return outcome

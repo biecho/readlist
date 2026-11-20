@@ -10,7 +10,7 @@ from pathlib import Path
 # New-style (2404.03387) and old-style (cs/0112017) arXiv ids, optional version.
 ARXIV_ID = re.compile(r"^(\d{4}\.\d{4,5}|[a-z\-]+(\.[A-Z]{2})?/\d{7})(v\d+)?$")
 
-# Kinds that are never downloaded: they always get a link placeholder.
+# Kinds readlist never looks up: only an explicit `pdf` link (e.g. slides) downloads.
 LINK_ONLY_KINDS = frozenset({"talk", "web"})
 
 
@@ -33,7 +33,13 @@ class Paper:
     open_copy: bool = True  # False: the only acceptable copy is an explicit `pdf`
 
     @property
-    def downloadable(self) -> bool:
+    def link_only(self) -> bool:
+        """A talk or web page without a `pdf` link: there is nothing to fetch, only a link."""
+        return self.kind in LINK_ONLY_KINDS and not self.pdf
+
+    @property
+    def searchable(self) -> bool:
+        """Whether readlist may look for a copy beyond an explicit `pdf` link."""
         return self.kind not in LINK_ONLY_KINDS
 
     def with_group(self, group: str) -> Paper:

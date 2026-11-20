@@ -63,6 +63,9 @@ def test_open_copy_false_skips_lookups():
     assert http.requests == []
 
 
-def test_talks_are_never_downloaded():
-    paper = Paper(id="p", title="T", kind="talk", pdf="https://x/slides.pdf")
-    assert resolvers.resolve(paper, FakeHttp(), Config()) is None
+def test_talks_download_only_their_explicit_slides():
+    http = FakeHttp()
+    slides = Paper(id="p", title="T", kind="talk", pdf="https://x/slides.pdf")
+    assert resolvers.resolve(slides, http, Config()).url == "https://x/slides.pdf"
+    assert resolvers.resolve(Paper(id="q", title="T", kind="talk"), http, Config()) is None
+    assert http.requests == []
